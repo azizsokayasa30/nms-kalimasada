@@ -1,0 +1,264 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  super_admin
+  admin
+  noc
+  viewer
+}
+
+enum DeviceType {
+  mikrotik_router
+  mikrotik_switch
+  huawei_olt
+  switch
+  access_point
+  server
+  customer_router
+  other
+}
+
+enum MonitorMethod {
+  icmp
+  snmp
+  mikrotik_api
+  combination
+}
+
+enum Criticality {
+  info
+  warning
+  major
+  critical
+}
+
+enum DeviceStatus {
+  up
+  down
+  warning
+  unknown
+  flapping
+  unreachable
+}
+
+enum AlarmSeverity {
+  info
+  warning
+  major
+  critical
+}
+
+enum AlarmState {
+  active
+  recovered
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         Role     @default(viewer)
+  fcmToken     String?  @map("fcm_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  acks         Alarm[]  @relation("AckBy")
+}
+
+model DeviceGroup {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  devices   Device[]
+}
+
+model Device {
+  id                     String         @id @default(cuid())
+  name                   String
+  ipAddress              String         @unique @map("ip_address")
+  deviceType             DeviceType     @map("device_type")
+  location               String?
+  groupId                String?        @map("group_id")
+  group                  DeviceGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  parentId               String?        @map("parent_id")
+  parent                 Device?        @relation("DeviceTree", fields: [parentId], references: [id])
+  children               Device[]       @relation("DeviceTree")
+  monitorMethod          MonitorMethod  @default(icmp) @map("monitor_method")
+  snmpCommunityEnc       String?        @map("snmp_community_enc")
+  snmpVersion            String         @default("2c") @map("snmp_version")
+  snmpPort               Int            @default(161) @map("snmp_port")
+  rosUsername            String?        @map("ros_username")
+  rosPasswordEnc         String?        @map("ros_password_enc")
+  rosPort                Int            @default(8728) @map("ros_port")
+  pingIntervalSec        Int            @default(10) @map("ping_interval_sec")
+  failedThreshold        Int            @default(3) @map("failed_threshold")
+  recoveryThreshold      Int            @default(2) @map("recovery_threshold")
+  alertDelaySec          Int            @default(30) @map("alert_delay_sec")
+  criticality            Criticality    @default(major)
+  notificationEnabled    Boolean        @default(true) @map("notification_enabled")
+  maintenance            Boolean        @default(false)
+  status                 DeviceStatus   @default(unknown)
+  latencyMs              Float?         @map("latency_ms")
+  packetLoss             Float?         @map("packet_loss")
+  bandwidthThresholdMbps Int?           @map("bandwidth_threshold_mbps")
+  lastSeenAt             DateTime?      @map("last_seen_at")
+  downSince              DateTime?      @map("down_since")
+  downtimeSec            Int            @default(0) @map("downtime_sec")
+  lastResponse           String?        @map("last_response")
+  zabbixHostId           String?        @unique @map("zabbix_host_id")
+  zabbixTechnicalName    String?        @unique @map("zabbix_technical_name")
+  zabbixDownTriggerId    String?        @map("zabbix_down_trigger_id")
+  zabbixLatencyTriggerId String?        @map("zabbix_latency_trigger_id")
+  zabbixLossTriggerId    String?        @map("zabbix_loss_trigger_id")
+  zabbixPingItemId       String?        @map("zabbix_ping_item_id")
+  zabbixLatencyItemId    String?        @map("zabbix_latency_item_id")
+  zabbixLossItemId       String?        @map("zabbix_loss_item_id")
+  zabbixMaintenanceId    String?        @map("zabbix_maintenance_id")
+  posX                   Float?         @map("pos_x")
+  posY                   Float?         @map("pos_y")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+  alarms                 Alarm[]
+  events                 Event[]
+  linksFrom              TopologyLink[] @relation("LinkSource")
+  linksTo                TopologyLink[] @relation("LinkTarget")
+  mrtgGraphs             MrtgGraph[]
+
+  @@index([status])
+  @@index([parentId])
+  @@index([groupId])
+}
+
+model MrtgGraph {
+  id        String   @id @default(cuid())
+  deviceId  String   @map("device_id")
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  kind      String
+  probeKey  String   @map("probe_key")
+  name      String
+  hidden    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([deviceId, kind, probeKey])
+  @@index([deviceId])
+  @@map("mrtg_graph")
+}
+
+model TopologyLink {
+  id            String  @id @default(cuid())
+  sourceId      String  @map("source_id")
+  targetId      String  @map("target_id")
+  source        Device  @relation("LinkSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target        Device  @relation("LinkTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  capacityBps       Float?  @map("capacity_bps")
+  interfaceDeviceId String? @map("interface_device_id")
+  interfaceKey      String? @map("interface_key")
+  interfaceName     String? @map("interface_name")
+
+  @@unique([sourceId, targetId])
+  @@index([interfaceDeviceId])
+}
+
+model Alarm {
+  id               String        @id @default(cuid())
+  deviceId         String        @map("device_id")
+  device           Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  severity         AlarmSeverity
+  state            AlarmState    @default(active)
+  suppressed       Boolean       @default(false)
+  title            String
+  message          String?
+  kind             String        @default("down")
+  zabbixEventId    String?       @unique @map("zabbix_event_id")
+  zabbixTriggerId  String?       @map("zabbix_trigger_id")
+  openedAt         DateTime      @default(now()) @map("opened_at")
+  recoveredAt      DateTime?     @map("recovered_at")
+  downtimeSec      Int?          @map("downtime_sec")
+  acknowledgedAt   DateTime?     @map("acknowledged_at")
+  acknowledgedById String?       @map("acknowledged_by")
+  acknowledgedBy   User?         @relation("AckBy", fields: [acknowledgedById], references: [id])
+  downstreamCount  Int           @default(0) @map("downstream_count")
+  rootCauseName    String?       @map("root_cause_name")
+  lastResponse     String?       @map("last_response")
+
+  @@index([state, openedAt])
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  deviceId  String?  @map("device_id")
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  type      String
+  message   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId, createdAt])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  name       String
+  role       Role      @default(viewer)
+  tokenHash  String    @unique @map("token_hash")
+  prefix     String
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+
+  @@map("api_tokens")
+}
+
+model Client {
+  id              String    @id @default(cuid())
+  name            String
+  username        String?
+  ipAddress       String?   @map("ip_address")
+  nasDeviceId     String?   @map("nas_device_id")
+  kind            String    @default("pppoe")
+  online          Boolean   @default(false)
+  uptimeSec       Int?      @map("uptime_sec")
+  lastDisconnect  DateTime? @map("last_disconnect")
+  rxBps           Float?    @map("rx_bps")
+  txBps           Float?    @map("tx_bps")
+  latencyMs       Float?    @map("latency_ms")
+  monitorPriority String    @default("normal") @map("monitor_priority")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+}
+
+model NotificationRule {
+  id         String  @id @default(cuid())
+  channel    String  @unique
+  enabled    Boolean @default(false)
+  config     Json    @default("{}")
+  events     Json    @default("[]")
+  severities Json    @default("[]")
+  quietStart String? @map("quiet_start")
+  quietEnd   String? @map("quiet_end")
+}
+
+model NotificationLog {
+  id      String   @id @default(cuid())
+  alarmId String?  @map("alarm_id")
+  channel String
+  target  String?
+  event   String   @default("test")
+  status  String
+  error   String?
+  sentAt  DateTime @default(now()) @map("sent_at")
+
+  @@index([alarmId])
+  @@index([sentAt])
+}
