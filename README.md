@@ -13,6 +13,16 @@ Fase ini sudah berjalan:
 
 SNMP, grafik trafik, RouterOS, client PPPoE, dan push notification menyusul di fase berikutnya.
 
+## Deploy ke server (sekali jalan)
+
+Di server Ubuntu 22.04/24.04 atau Debian 12 yang masih bersih, jalankan sebagai root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/azizsokayasa30/nms-kalimasada/main/deploy.sh | bash
+```
+
+Script `deploy.sh` memasang PostgreSQL, Zabbix 7.0 (server, frontend, agent), Node.js, dan nginx, lalu build dan menjalankan NMS sebagai service `kalimasada-api`. Dashboard ada di port 80 dan Zabbix di port 8080. Password dibuat acak dan disimpan di `/root/kalimasada-credentials.txt`. Untuk update, jalankan ulang `sudo bash /opt/kalimasada/deploy.sh`. Opsi lain bisa dilihat dengan `bash deploy.sh --help`.
+
 ## Menjalankan di PC ini
 
 PostgreSQL aplikasi memakai basis data lokal di `backend/.data`. Docker belum wajib untuk membuka dashboard.
