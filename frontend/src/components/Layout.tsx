@@ -164,6 +164,13 @@ export function Layout() {
           </button>
         </div>
         <div className="user">
+          <div className="user-card">
+            <span className="avatar" aria-hidden="true">{initials(user?.name)}</span>
+            <div>
+              <strong className="user-name" title={user?.name}>{user?.name}</strong>
+              <span className="user-role">{roleLabels[user?.role ?? ''] ?? user?.role}</span>
+            </div>
+          </div>
           <button className="logout" type="button" onClick={() => { logout(); navigate('/login'); }}>Keluar</button>
         </div>
       </aside>
@@ -183,13 +190,6 @@ export function Layout() {
               <BellIcon />
               {activeAlarms > 0 ? <b className="count">{activeAlarms}</b> : null}
             </Link>
-            <div className="topbar-user">
-              <span className="avatar" aria-hidden="true">{initials(user?.name)}</span>
-              <div>
-                <strong className="user-name">{user?.name}</strong>
-                <span className="user-role">{roleLabels[user?.role ?? ''] ?? user?.role}</span>
-              </div>
-            </div>
           </div>
         </header>
         <div className="content" id="page-content">
