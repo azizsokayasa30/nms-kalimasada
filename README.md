@@ -32,6 +32,8 @@ Instal baru maupun ulang memakai tatanan folder ini:
 /root/NMS-KALIMASADA/kalimasada-credentials.txt  ringkasan login
 ```
 
+Domain bawaan adalah `nms.kalimasada-app.com` untuk dashboard dan `zabbix.kalimasada-app.com` untuk Zabbix. Buat record A kedua nama itu ke IP server NMS; record wildcard `*` milik aplikasi billing tidak perlu diubah. Begitu DNS mengarah ke server, `deploy.sh` membuat sertifikat Let's Encrypt dan mengalihkan HTTP ke HTTPS. Atur lewat `NMS_DOMAIN`, `ZABBIX_DOMAIN`, `ENABLE_HTTPS`, dan `LE_EMAIL`.
+
 Password dibuat acak dan disimpan di `/root/NMS-KALIMASADA/kalimasada-credentials.txt`. Untuk update, jalankan ulang `sudo bash /root/NMS-KALIMASADA/deploy.sh`. Opsi lain bisa dilihat dengan `bash deploy.sh --help`.
 
 ## Menjalankan di PC ini

@@ -38,6 +38,11 @@ ZABBIX_WEB_PORT=${ZABBIX_WEB_PORT:-8080}
 ZABBIX_VERSION=${ZABBIX_VERSION:-7.0}
 NODE_MAJOR=${NODE_MAJOR:-22}
 PUBLIC_HOST=${PUBLIC_HOST:-}
+NMS_DOMAIN=${NMS_DOMAIN-nms.kalimasada-app.com}
+ZABBIX_DOMAIN=${ZABBIX_DOMAIN-zabbix.kalimasada-app.com}
+ENABLE_HTTPS=${ENABLE_HTTPS:-1}
+LE_EMAIL=${LE_EMAIL:-}
+ACME_ROOT=${ACME_ROOT:-/var/www/letsencrypt}
 SECRETS_FILE=${SECRETS_FILE:-/root/NMS-KALIMASADA/secrets.env}
 CREDENTIALS_FILE=${CREDENTIALS_FILE:-/root/NMS-KALIMASADA/kalimasada-credentials.txt}
 RESET_ZABBIX_ADMIN=${RESET_ZABBIX_ADMIN:-0}
@@ -75,6 +80,10 @@ Variabel opsional (nilai bawaan dalam kurung):
   ADMIN_PASSWORD       Password login awal NMS (acak)
   ZABBIX_ADMIN_PASSWORD Password user Admin Zabbix (acak)
   PUBLIC_HOST          IP/domain server untuk CORS dan ringkasan (otomatis)
+  NMS_DOMAIN           Domain dashboard NMS (nms.kalimasada-app.com, kosongkan untuk mematikan)
+  ZABBIX_DOMAIN        Domain web Zabbix (zabbix.kalimasada-app.com, kosongkan untuk mematikan)
+  ENABLE_HTTPS         Buat sertifikat Let's Encrypt untuk domain yang DNS-nya ke server ini (1)
+  LE_EMAIL             Email pemberitahuan Let's Encrypt (kosong)
   HTTP_PORT            Port dashboard NMS (80)
   ZABBIX_WEB_PORT      Port web Zabbix (8080)
   APP_PORT             Port internal API (3000)
@@ -437,6 +446,10 @@ ensure_service_user() {
 write_env() {
   local origin="http://${PUBLIC_HOST}"
   [[ $HTTP_PORT == 80 ]] || origin+=":${HTTP_PORT}"
+  if [[ -n $NMS_DOMAIN ]]; then
+    origin+=",https://${NMS_DOMAIN}"
+    [[ $HTTP_PORT == 80 ]] && origin+=",http://${NMS_DOMAIN}" || origin+=",http://${NMS_DOMAIN}:${HTTP_PORT}"
+  fi
   (
     umask 077
     cat >"$INSTALL_DIR/backend/.env" <<EOF
@@ -543,15 +556,10 @@ EOF
   systemctl restart "$SERVICE_NAME"
 }
 
-install_nginx_site() {
-  local v6=""
-  if [[ -f /proc/net/if_inet6 ]]; then v6="    listen [::]:${HTTP_PORT} default_server;"; fi
-  cat >/etc/nginx/sites-available/kalimasada <<EOF
-server {
-    listen ${HTTP_PORT} default_server;
-${v6}
-    server_name _;
+has_cert() { [[ -n $1 && -s /etc/letsencrypt/live/$1/fullchain.pem ]]; }
 
+nms_locations() {
+  cat <<EOF
     root ${WEB_ROOT};
     index index.html;
     client_max_body_size 20m;
@@ -584,18 +592,153 @@ ${v6}
     location / {
         try_files \$uri \$uri/ /index.html;
     }
+EOF
+}
+
+zabbix_locations() {
+  cat <<EOF
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass http://127.0.0.1:${ZABBIX_WEB_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300s;
+    }
+EOF
+}
+
+acme_location() {
+  cat <<EOF
+    location ^~ /.well-known/acme-challenge/ {
+        root ${ACME_ROOT};
+        default_type text/plain;
+    }
+EOF
+}
+
+# Domain yang sudah punya sertifikat dilayani lewat HTTPS dan port HTTP-nya dialihkan.
+# Domain tanpa sertifikat tetap dilayani lewat HTTP biasa.
+domain_server() {
+  local domain=$1 kind=$2 v6_http="" v6_https=""
+  if [[ -f /proc/net/if_inet6 ]]; then
+    v6_http="    listen [::]:${HTTP_PORT};"
+    v6_https="    listen [::]:443 ssl http2;"
+  fi
+  if has_cert "$domain"; then
+    cat <<EOF
+
+server {
+    listen ${HTTP_PORT};
+${v6_http}
+    server_name ${domain};
+$(acme_location)
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+${v6_https}
+    server_name ${domain};
+
+    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:kalimasada_ssl:10m;
+    ssl_session_timeout 1d;
+
+$("${kind}_locations")
 }
 EOF
+  else
+    cat <<EOF
+
+server {
+    listen ${HTTP_PORT};
+${v6_http}
+    server_name ${domain};
+$(acme_location)
+
+$("${kind}_locations")
+}
+EOF
+  fi
+}
+
+install_nginx_site() {
+  local v6=""
+  if [[ -f /proc/net/if_inet6 ]]; then v6="    listen [::]:${HTTP_PORT} default_server;"; fi
+  install -d "$ACME_ROOT"
+  {
+    cat <<EOF
+server {
+    listen ${HTTP_PORT} default_server;
+${v6}
+    server_name _;
+$(acme_location)
+
+$(nms_locations)
+}
+EOF
+    [[ -z $NMS_DOMAIN ]] || domain_server "$NMS_DOMAIN" nms
+    [[ -z $ZABBIX_DOMAIN ]] || domain_server "$ZABBIX_DOMAIN" zabbix
+  } >/etc/nginx/sites-available/kalimasada
   ln -sfn /etc/nginx/sites-available/kalimasada /etc/nginx/sites-enabled/kalimasada
   nginx -t -q
   systemctl reload-or-restart nginx
 
   if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
     ufw allow "${HTTP_PORT}/tcp" >/dev/null
+    ufw allow 443/tcp >/dev/null
     ufw allow "${ZABBIX_WEB_PORT}/tcp" >/dev/null
-    info "Firewall ufw: port ${HTTP_PORT} dan ${ZABBIX_WEB_PORT} dibuka."
+    info "Firewall ufw: port ${HTTP_PORT}, 443, dan ${ZABBIX_WEB_PORT} dibuka."
   fi
 }
+
+points_here() {
+  local ip
+  ip=$(getent ahostsv4 "$1" 2>/dev/null | awk 'NR == 1 {print $1}')
+  [[ -n $ip ]] && hostname -I 2>/dev/null | tr ' ' '\n' | grep -qxF "$ip"
+}
+
+setup_https() {
+  [[ $ENABLE_HTTPS == 1 ]] || return 0
+  local domain added=0 email_args=(--register-unsafely-without-email)
+  [[ -z $LE_EMAIL ]] || email_args=(--email "$LE_EMAIL" --no-eff-email)
+  for domain in "$NMS_DOMAIN" "$ZABBIX_DOMAIN"; do
+    [[ -n $domain ]] || continue
+    if has_cert "$domain"; then
+      info "Sertifikat ${domain} sudah ada (diperpanjang otomatis oleh certbot)."
+      continue
+    fi
+    if ((HTTP_PORT != 80)); then
+      warn "HTTPS ${domain} dilewati: Let's Encrypt butuh HTTP_PORT=80."
+      continue
+    fi
+    if ! points_here "$domain"; then
+      warn "HTTPS ${domain} dilewati: DNS belum mengarah ke server ini. Jalankan ulang deploy.sh setelah DNS diubah."
+      continue
+    fi
+    command -v certbot >/dev/null || apt_install certbot
+    if certbot certonly --webroot -w "$ACME_ROOT" -d "$domain" --cert-name "$domain" \
+      --non-interactive --agree-tos "${email_args[@]}" \
+      --deploy-hook "systemctl reload nginx"; then
+      info "Sertifikat ${domain} dibuat."
+      added=1
+    else
+      warn "Gagal membuat sertifikat ${domain}; domain tetap dilayani lewat HTTP."
+    fi
+  done
+  if ((added)); then install_nginx_site; fi
+}
+
+domain_url() { if has_cert "$1"; then printf 'https://%s' "$1"; else printf 'http://%s' "$1"; fi; }
 
 api_up() {
   local code
@@ -616,6 +759,8 @@ write_credentials() {
   APP_URL="http://${PUBLIC_HOST}"
   [[ $HTTP_PORT == 80 ]] || APP_URL+=":${HTTP_PORT}"
   ZBX_URL="http://${PUBLIC_HOST}:${ZABBIX_WEB_PORT}"
+  [[ -z $NMS_DOMAIN ]] || APP_URL+=" atau $(domain_url "$NMS_DOMAIN")"
+  [[ -z $ZABBIX_DOMAIN ]] || ZBX_URL+=" atau $(domain_url "$ZABBIX_DOMAIN")"
   (
     umask 077
     cat >"$CREDENTIALS_FILE" <<EOF
@@ -695,6 +840,9 @@ main() {
   step "Service dan nginx"
   install_service
   install_nginx_site
+
+  step "HTTPS domain"
+  setup_https
 
   step "Pemeriksaan akhir"
   check_health
