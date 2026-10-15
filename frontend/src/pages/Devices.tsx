@@ -42,7 +42,7 @@ export function DevicesPage() {
   const [probes, setProbes] = useState<Record<string, Probe>>({});
   const [total, setTotal] = useState(0);
   const [error, setError] = useState('');
-  const canEdit = can(user?.role, 'admin');
+  const canEdit = can(user?.role, 'noc');
   const canTest = can(user?.role, 'noc');
 
   useEffect(() => {

@@ -261,7 +261,7 @@ export function MrtgPage() {
             <div className="sub">{graph ? `${graph.device.ipAddress}${graph.device.location ? ` · ${graph.device.location}` : ''}` : 'Pilih perangkat'}</div>
           </div>
           <div className="toolbar">
-            {can(user?.role, 'admin') ? <button className="btn" type="button" onClick={() => void openAdd()}>Tambah Graph</button> : null}
+            {can(user?.role, 'noc') ? <button className="btn" type="button" onClick={() => void openAdd()}>Tambah Graph</button> : null}
             <button className="btn-ghost" type="button" disabled={exporting !== '' || !graph} onClick={() => void exportReport('png')}>
               {exporting === 'png' ? 'Menyiapkan gambar...' : 'Export gambar'}
             </button>
@@ -341,7 +341,7 @@ export function MrtgPage() {
                   ) : (
                     <StatLine label="" stats={{ min: item.min ?? null, avg: item.avg ?? null, max: item.max ?? null }} unit={item.unit} threshold={item.threshold} />
                   )}
-                  {can(user?.role, 'admin') ? <button className="btn-ghost" type="button" onClick={() => void removeGraph(item.id)}>Hapus</button> : null}
+                  {can(user?.role, 'noc') ? <button className="btn-ghost" type="button" onClick={() => void removeGraph(item.id)}>Hapus</button> : null}
                 </div>
                 {item.kind === 'interface' ? (
                   <TrafficChart

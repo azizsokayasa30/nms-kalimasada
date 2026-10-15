@@ -67,8 +67,8 @@ export function DeviceDetailPage() {
           </div>
           <div className="toolbar">
             <StatusBadge status={device.status} />
-            {can(user?.role, 'admin') ? <Link className="btn-ghost" to={`/devices/${device.id}/edit`}>Ubah</Link> : null}
-            {can(user?.role, 'admin') ? <button className="btn-danger" type="button" onClick={() => void remove()}>Hapus</button> : null}
+            {can(user?.role, 'noc') ? <Link className="btn-ghost" to={`/devices/${device.id}/edit`}>Ubah</Link> : null}
+            {can(user?.role, 'noc') ? <button className="btn-danger" type="button" onClick={() => void remove()}>Hapus</button> : null}
           </div>
         </header>
         <div className="statrow">

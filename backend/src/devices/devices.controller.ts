@@ -70,25 +70,25 @@ export class DevicesController {
     return this.devices.listGroups();
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Post('groups')
   createGroup(@Body() body: GroupBody) {
     return this.devices.createGroup(body.name);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Put('groups/:id')
   renameGroup(@Param('id') id: string, @Body() body: GroupBody) {
     return this.devices.renameGroup(id, body.name);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Delete('groups/:id')
   removeGroup(@Param('id') id: string) {
     return this.devices.removeGroup(id);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Post()
   create(@Body() dto: DeviceBody) {
     return this.devices.create(dto);
@@ -104,13 +104,13 @@ export class DevicesController {
     return this.devices.mrtgOptions(id);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Post(':id/mrtg/graphs')
   addMrtgGraph(@Param('id') id: string, @Body() body: GraphBody) {
     return this.devices.addMrtgGraph(id, body.kind, body.key);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Delete(':id/mrtg/graphs/:graphId')
   removeMrtgGraph(@Param('id') id: string, @Param('graphId') graphId: string) {
     return this.devices.removeMrtgGraph(id, graphId);
@@ -126,7 +126,7 @@ export class DevicesController {
     return this.devices.mrtg(id, { period, from, to });
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Put(':id/bandwidth-threshold')
   bandwidthThreshold(@Param('id') id: string, @Body() body: ThresholdBody) {
     return this.devices.setBandwidthThreshold(id, body.bandwidthThresholdMbps ?? null);
@@ -153,13 +153,13 @@ export class DevicesController {
     return this.devices.get(id);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateDeviceBody) {
     return this.devices.update(id, dto);
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.devices.remove(id);

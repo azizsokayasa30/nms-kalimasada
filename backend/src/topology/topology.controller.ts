@@ -91,7 +91,7 @@ export class TopologyController {
     return { ok: true };
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Post('links')
   async createLink(@Body() body: LinkBody) {
     if (body.sourceId === body.targetId) throw new BadRequestException('Link tidak boleh ke perangkat yang sama');
@@ -102,7 +102,7 @@ export class TopologyController {
     });
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Get('links/:id/interfaces')
   async linkInterfaces(@Param('id') id: string) {
     const link = await this.prisma.topologyLink.findUnique({
@@ -114,7 +114,7 @@ export class TopologyController {
     return { source, target };
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Patch('links/:id')
   async updateLink(@Param('id') id: string, @Body() body: LinkInterfaceBody) {
     const link = await this.prisma.topologyLink.findUnique({
@@ -141,7 +141,7 @@ export class TopologyController {
     return saved;
   }
 
-  @Roles('admin')
+  @Roles('noc')
   @Delete('links/:id')
   async removeLink(@Param('id') id: string) {
     const link = await this.prisma.topologyLink.findUnique({ where: { id } });

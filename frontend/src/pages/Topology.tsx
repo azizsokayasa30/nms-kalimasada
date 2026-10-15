@@ -175,7 +175,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
   const [portError, setPortError] = useState('');
   const [saving, setSaving] = useState(false);
   const selected = links.find((link) => link.id === selectedId) ?? null;
-  const isAdmin = can(user?.role, 'admin');
+  const canManage = can(user?.role, 'noc');
 
   const load = useCallback(() => {
     const query = location ? `?location=${encodeURIComponent(location)}` : '';
@@ -247,7 +247,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
     setPortError('');
     const link = links.find((item) => item.id === id);
     setPortChoice(link?.interfaceDeviceId && link.interfaceKey ? `${link.interfaceDeviceId}|${link.interfaceKey}` : '');
-    if (!isAdmin) return;
+    if (!canManage) return;
     try {
       setPorts(await api<{ source: PortSide; target: PortSide }>(`/api/topology/links/${id}/interfaces`));
     } catch (err) {
@@ -290,7 +290,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
   }
 
   async function onConnect(connection: Connection) {
-    if (!can(user?.role, 'admin') || !connection.source || !connection.target) return;
+    if (!canManage || !connection.source || !connection.target) return;
     await api('/api/topology/links', {
       method: 'POST',
       body: JSON.stringify({ sourceId: connection.source, targetId: connection.target }),
@@ -316,7 +316,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
           nodeTypes={nodeTypes}
           fitView
           nodesDraggable={can(user?.role, 'noc')}
-          nodesConnectable={can(user?.role, 'admin')}
+          nodesConnectable={canManage}
           deleteKeyCode={null}
           onNodeDoubleClick={(_, node) => {
             if (present) return;
@@ -356,7 +356,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
           ) : (
             <p className="sub">Pilih interface agar trafik tampil di garis.</p>
           )}
-          {isAdmin ? (
+          {canManage ? (
             <>
               <label className="field">
                 <span>Interface</span>
