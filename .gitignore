@@ -1,5 +1,9 @@
 node_modules/
 dist/
+www/
+
+secrets.env
+kalimasada-credentials.txt
 
 .env
 .env.*

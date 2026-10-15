@@ -21,7 +21,18 @@ Di server Ubuntu 22.04/24.04 atau Debian 12 yang masih bersih, jalankan sebagai 
 curl -fsSL https://raw.githubusercontent.com/azizsokayasa30/nms-kalimasada/main/deploy.sh | bash
 ```
 
-Script `deploy.sh` memasang PostgreSQL, Zabbix 7.0 (server, frontend, agent), Node.js, dan nginx, lalu build dan menjalankan NMS sebagai service `kalimasada-api`. Dashboard ada di port 80 dan Zabbix di port 8080. Password dibuat acak dan disimpan di `/root/kalimasada-credentials.txt`. Untuk update, jalankan ulang `sudo bash /opt/kalimasada/deploy.sh`. Opsi lain bisa dilihat dengan `bash deploy.sh --help`.
+Script `deploy.sh` memasang PostgreSQL, Zabbix 7.0 (server, frontend, agent), Node.js, dan nginx, lalu build dan menjalankan NMS sebagai service `kalimasada-api`. Dashboard ada di port 80 dan Zabbix di port 8080.
+
+Instal baru maupun ulang memakai tatanan folder ini:
+
+```
+/root/NMS-KALIMASADA/                            kode (frontend, backend, deploy.sh)
+/root/NMS-KALIMASADA/www/                        file frontend yang dilayani nginx
+/root/NMS-KALIMASADA/secrets.env                 secret deploy
+/root/NMS-KALIMASADA/kalimasada-credentials.txt  ringkasan login
+```
+
+Password dibuat acak dan disimpan di `/root/NMS-KALIMASADA/kalimasada-credentials.txt`. Untuk update, jalankan ulang `sudo bash /root/NMS-KALIMASADA/deploy.sh`. Opsi lain bisa dilihat dengan `bash deploy.sh --help`.
 
 ## Menjalankan di PC ini
 

@@ -12,7 +12,13 @@
 #   sudo bash deploy.sh
 #
 # Aman dijalankan ulang untuk update. Password dan secret yang dibuat disimpan
-# di /etc/kalimasada/secrets.env dan dipakai lagi pada run berikutnya.
+# di /root/NMS-KALIMASADA/secrets.env dan dipakai lagi pada run berikutnya.
+#
+# Tatanan folder bawaan (nama huruf besar, dipakai setiap instal baru dan ulang):
+#   /root/NMS-KALIMASADA/                          kode (frontend, backend, deploy.sh)
+#   /root/NMS-KALIMASADA/www/                      file frontend yang dilayani nginx
+#   /root/NMS-KALIMASADA/secrets.env               secret deploy, tidak masuk git
+#   /root/NMS-KALIMASADA/kalimasada-credentials.txt  ringkasan login, tidak masuk git
 #
 # Pengaturan lewat variabel lingkungan, contoh:
 #   ADMIN_EMAIL=noc@contoh.id ADMIN_PASSWORD=RahasiaKuat123 bash deploy.sh
@@ -22,8 +28,8 @@ umask 022
 
 REPO_URL=${REPO_URL:-https://github.com/azizsokayasa30/nms-kalimasada.git}
 BRANCH=${BRANCH:-main}
-INSTALL_DIR=${INSTALL_DIR:-/opt/kalimasada}
-WEB_ROOT=${WEB_ROOT:-/var/www/kalimasada}
+INSTALL_DIR=${INSTALL_DIR:-/root/NMS-KALIMASADA}
+WEB_ROOT=${WEB_ROOT:-/root/NMS-KALIMASADA/www}
 SERVICE_NAME=${SERVICE_NAME:-kalimasada-api}
 SERVICE_USER=${SERVICE_USER:-kalimasada}
 APP_PORT=${APP_PORT:-3000}
@@ -32,8 +38,8 @@ ZABBIX_WEB_PORT=${ZABBIX_WEB_PORT:-8080}
 ZABBIX_VERSION=${ZABBIX_VERSION:-7.0}
 NODE_MAJOR=${NODE_MAJOR:-22}
 PUBLIC_HOST=${PUBLIC_HOST:-}
-SECRETS_FILE=${SECRETS_FILE:-/etc/kalimasada/secrets.env}
-CREDENTIALS_FILE=${CREDENTIALS_FILE:-/root/kalimasada-credentials.txt}
+SECRETS_FILE=${SECRETS_FILE:-/root/NMS-KALIMASADA/secrets.env}
+CREDENTIALS_FILE=${CREDENTIALS_FILE:-/root/NMS-KALIMASADA/kalimasada-credentials.txt}
 RESET_ZABBIX_ADMIN=${RESET_ZABBIX_ADMIN:-0}
 
 SECRET_KEYS=(
@@ -72,8 +78,8 @@ Variabel opsional (nilai bawaan dalam kurung):
   HTTP_PORT            Port dashboard NMS (80)
   ZABBIX_WEB_PORT      Port web Zabbix (8080)
   APP_PORT             Port internal API (3000)
-  INSTALL_DIR          Lokasi kode (/opt/kalimasada)
-  WEB_ROOT             Lokasi file frontend untuk nginx (/var/www/kalimasada)
+  INSTALL_DIR          Lokasi kode (/root/NMS-KALIMASADA)
+  WEB_ROOT             Lokasi file frontend untuk nginx (/root/NMS-KALIMASADA/www)
   SERVICE_USER         User Linux yang menjalankan API (kalimasada)
   REPO_URL, BRANCH     Sumber kode bila script tidak dijalankan dari dalam repo
   RESET_ZABBIX_ADMIN=1 Paksa set ulang password Admin Zabbix yang sudah ada
@@ -228,7 +234,14 @@ load_secrets() {
 }
 
 save_secrets() {
-  install -d -m 700 "$(dirname "$SECRETS_FILE")"
+  local dir
+  dir=$(dirname "$SECRETS_FILE")
+  install -d "$dir"
+  if [[ $dir == "$INSTALL_DIR" || $dir == "$INSTALL_DIR/"* ]]; then
+    chmod 755 "$dir"
+  else
+    chmod 700 "$dir"
+  fi
   (
     umask 077
     {
@@ -237,6 +250,8 @@ save_secrets() {
       for k in "${SECRET_KEYS[@]}"; do printf '%s="%s"\n' "$k" "${!k}"; done
     } >"$SECRETS_FILE"
   )
+  chown root:root "$SECRETS_FILE"
+  chmod 600 "$SECRETS_FILE"
 }
 
 install_node() {
@@ -463,9 +478,20 @@ build_app() {
   install -d "$INSTALL_DIR/backend/data"
   chown -R "${SERVICE_USER}:" "$INSTALL_DIR"
   chmod 600 "$INSTALL_DIR/backend/.env"
+  [[ -f $SECRETS_FILE ]] && chown root:root "$SECRETS_FILE" && chmod 600 "$SECRETS_FILE"
+  [[ -f $CREDENTIALS_FILE ]] && chown root:root "$CREDENTIALS_FILE" && chmod 600 "$CREDENTIALS_FILE"
+
+  if [[ $(realpath -m "$INSTALL_DIR") == /root/* || $(realpath -m "$WEB_ROOT") == /root/* ]]; then
+    chmod o+x /root
+  fi
+  chmod 755 "$INSTALL_DIR"
+  [[ -d $WEB_ROOT ]] && chmod 755 "$WEB_ROOT"
 
   if [[ $SERVICE_USER != root ]] && ! runuser -u "$SERVICE_USER" -- test -r "$INSTALL_DIR/backend/dist/main.js"; then
-    die "User ${SERVICE_USER} tidak bisa membaca ${INSTALL_DIR}. Pindahkan INSTALL_DIR ke luar /root (misalnya /opt/kalimasada)."
+    die "User ${SERVICE_USER} tidak bisa membaca ${INSTALL_DIR}. Pastikan direktori induk bisa ditelusuri."
+  fi
+  if id -u www-data >/dev/null 2>&1 && ! runuser -u www-data -- test -r "$WEB_ROOT/index.html"; then
+    die "User www-data tidak bisa membaca ${WEB_ROOT}."
   fi
 }
 
