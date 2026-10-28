@@ -16,6 +16,7 @@ import {
 import { can, roleLabels } from '../lib/format';
 import { playRecovery } from '../components/AlarmSound';
 import { NotificationTab } from './NotificationSettings';
+import { NetworkTab } from './network/NetworkTab';
 
 type AppSettings = {
   soundEnabled: boolean;
@@ -49,20 +50,23 @@ const tabs = [
   { id: 'akses', label: 'Akses API' },
   { id: 'suara', label: 'Suara' },
   { id: 'notifikasi', label: 'Notifikasi' },
+  { id: 'jaringan', label: 'Jaringan', role: 'admin' },
 ] as const;
 
 type TabId = (typeof tabs)[number]['id'];
 
 export function SettingsPage() {
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
+  const visible = tabs.filter((item) => !('role' in item) || can(user?.role, item.role));
   const requested = params.get('tab');
-  const tab: TabId = tabs.some((item) => item.id === requested) ? requested as TabId : 'tampilan';
+  const tab: TabId = visible.some((item) => item.id === requested) ? requested as TabId : 'tampilan';
 
   return (
     <section className="panel">
       <header><h2>Pengaturan</h2></header>
       <div className="settings-tabs">
-        {tabs.map((item) => (
+        {visible.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -79,6 +83,7 @@ export function SettingsPage() {
       {tab === 'akses' ? <ApiTab /> : null}
       {tab === 'suara' ? <SoundTab /> : null}
       {tab === 'notifikasi' ? <NotificationTab /> : null}
+      {tab === 'jaringan' ? <NetworkTab /> : null}
     </section>
   );
 }

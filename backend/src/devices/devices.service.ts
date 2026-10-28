@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DeviceType, MonitorMethod, Prisma } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { decryptSecret, encryptSecret } from '../infra/crypto';
 import { PrismaService } from '../infra/prisma.service';
 import { managedItemKey, managedProbeKey, ProvisionService } from '../zabbix/zabbix.provision';
@@ -274,7 +275,11 @@ export class DevicesService {
     return saved;
   }
 
-  async removeMrtgGraph(id: string, graphId: string) {
+  async removeMrtgGraph(id: string, graphId: string, userId: string, password: string) {
+    const actor = await this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+    if (!actor) throw new BadRequestException('Konfirmasi password hanya bisa dari akun yang sedang login');
+    const matches = await bcrypt.compare(password, actor.passwordHash);
+    if (!matches) throw new BadRequestException('Password salah');
     const row = await this.prisma.mrtgGraph.findFirst({ where: { id: graphId, deviceId: id, hidden: false } });
     if (!row) throw new NotFoundException('Graph tidak ditemukan');
     await this.prisma.mrtgGraph.update({ where: { id: graphId }, data: { hidden: true } });

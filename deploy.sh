@@ -195,7 +195,8 @@ install_base() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -q
   apt_install ca-certificates curl gnupg git rsync openssl gzip \
-    iputils-ping fping snmp libcap2-bin postgresql postgresql-contrib nginx
+    iputils-ping fping snmp libcap2-bin postgresql postgresql-contrib nginx \
+    iproute2 wireguard-tools openvpn strongswan-starter strongswan-charon xl2tpd ppp
 
   if ! getcap /usr/bin/fping 2>/dev/null | grep -q cap_net_raw && [[ ! -u /usr/bin/fping ]]; then
     setcap cap_net_raw+ep /usr/bin/fping || warn "Gagal memberi izin ICMP ke fping; ping Zabbix bisa gagal."
@@ -556,6 +557,44 @@ EOF
   systemctl restart "$SERVICE_NAME"
 }
 
+# Layanan root terpisah untuk interface, VLAN, IP, route, dan VPN. Kodenya disalin
+# ke luar INSTALL_DIR agar user service tidak bisa mengubah program yang jalan sebagai root.
+install_netd() {
+  local node_bin dest=/usr/local/lib/kalimasada/netd
+  node_bin=$(command -v node)
+  install -d -m 755 /usr/local/lib/kalimasada
+  rsync -a --delete "$INSTALL_DIR/backend/netd/" "$dest/"
+  chown -R root:root "$dest"
+  chmod -R go-w "$dest"
+  install -d -m 700 /etc/kalimasada
+  if [[ ! -f /etc/kalimasada/network.json ]]; then
+    systemctl disable --now xl2tpd strongswan-starter >/dev/null 2>&1 || true
+  fi
+
+  cat >/etc/systemd/system/kalimasada-netd.service <<EOF
+[Unit]
+Description=Kalimasada NMS network (interface, VLAN, route, VPN)
+After=network-online.target
+Wants=network-online.target
+Before=${SERVICE_NAME}.service
+
+[Service]
+Type=simple
+ExecStart=${node_bin} ${dest}/main.js
+Environment=NETD_GROUP=$(id -gn "$SERVICE_USER")
+RuntimeDirectory=kalimasada-netd
+RuntimeDirectoryMode=0755
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable kalimasada-netd >/dev/null 2>&1
+  systemctl restart kalimasada-netd
+}
+
 has_cert() { [[ -n $1 && -s /etc/letsencrypt/live/$1/fullchain.pem ]]; }
 
 nms_locations() {
@@ -838,6 +877,7 @@ main() {
   clear_stale_integration
 
   step "Service dan nginx"
+  install_netd
   install_service
   install_nginx_site
 

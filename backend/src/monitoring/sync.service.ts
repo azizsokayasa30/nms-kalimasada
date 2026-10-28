@@ -5,6 +5,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ProvisionService } from '../zabbix/zabbix.provision';
 import { ZabbixProblem, ZabbixService } from '../zabbix/zabbix.service';
+import { UplinkService } from './uplink.service';
 
 @Injectable()
 export class SyncService implements OnModuleInit, OnModuleDestroy {
@@ -13,6 +14,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
   private running = false;
   private misses = 0;
   private webhookReady = false;
+  private triggersRefreshed = false;
   private readonly flips = new Map<string, number[]>();
 
   constructor(
@@ -21,6 +23,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     private readonly provision: ProvisionService,
     private readonly gateway: RealtimeGateway,
     private readonly notifier: NotificationService,
+    private readonly uplink: UplinkService,
   ) {}
 
   onModuleInit() {
@@ -53,6 +56,10 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
       }
       if (!this.webhookReady) this.webhookReady = await this.zabbix.ensureWebhook();
       this.misses = 0;
+      if (!this.triggersRefreshed) {
+        this.triggersRefreshed = true;
+        await this.provision.refreshWarningTriggers();
+      }
 
       const pending = await this.prisma.device.findMany({ where: { zabbixHostId: null } });
       for (const device of pending) {
@@ -245,7 +252,13 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
       const downtimeSec = Math.max(0, Math.floor((Date.now() - alarm.openedAt.getTime()) / 1000));
       await this.prisma.alarm.update({
         where: { id: alarm.id },
-        data: { state: 'recovered', recoveredAt: new Date(), downtimeSec, suppressed: false, message },
+        data: {
+          state: 'recovered',
+          recoveredAt: new Date(),
+          downtimeSec,
+          suppressed: alarm.rootCauseName === SERVER_ROOT_CAUSE,
+          message,
+        },
       });
       await this.prisma.event.create({
         data: { deviceId: device.id, type: 'alarm_recovered', message: `${device.name} pulih. Downtime ${downtimeSec} detik` },
@@ -267,6 +280,9 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
       return { opened, recovered };
     }
 
+    const serverBlip = this.uplink.degradedWithin(device.failedThreshold * device.pingIntervalSec * 1000 + BLIP_MARGIN_MS);
+    const rootCauseName = serverBlip ? SERVER_ROOT_CAUSE : device.name;
+
     if (effective === 'down' && device.zabbixDownTriggerId) {
       const problem = problemsByTrigger.get(device.zabbixDownTriggerId);
       if (problem) {
@@ -275,8 +291,9 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
         if (existing) {
           await this.prisma.alarm.update({
             where: { id: existing.id },
-            data: { suppressed: false, downstreamCount, rootCauseName: device.name, lastResponse: 'Timeout' },
+            data: { suppressed: serverBlip, downstreamCount, rootCauseName, lastResponse: 'Timeout' },
           });
+          if (existing.suppressed && !serverBlip) opened = true;
         } else {
           await this.prisma.alarm.create({
             data: {
@@ -290,13 +307,18 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
               openedAt: new Date(Number(problem.clock) * 1000),
               lastResponse: 'Timeout',
               downstreamCount,
-              rootCauseName: device.name,
+              rootCauseName,
+              suppressed: serverBlip,
             },
           });
           await this.prisma.event.create({
-            data: { deviceId: device.id, type: 'alarm_opened', message: `${device.name} DOWN` },
+            data: {
+              deviceId: device.id,
+              type: 'alarm_opened',
+              message: serverBlip ? `${device.name} DOWN (jaringan server NMS terganggu)` : `${device.name} DOWN`,
+            },
           });
-          opened = true;
+          opened = !serverBlip;
         }
       }
       for (const alarm of active) {
@@ -314,7 +336,10 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
       const source = problem ?? lossProblem;
       if (source) {
         const existing = active.find((alarm) => alarm.kind === 'warning' && alarm.zabbixEventId === source.eventid);
-        if (!existing) {
+        if (existing && existing.suppressed !== serverBlip) {
+          await this.prisma.alarm.update({ where: { id: existing.id }, data: { suppressed: serverBlip, rootCauseName } });
+          opened = !serverBlip;
+        } else if (!existing) {
           await this.prisma.alarm.create({
             data: {
               deviceId: device.id,
@@ -326,10 +351,11 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
               zabbixTriggerId: source.objectid,
               openedAt: new Date(Number(source.clock) * 1000),
               lastResponse: problem ? 'Latency' : 'Packet loss',
-              rootCauseName: device.name,
+              rootCauseName,
+              suppressed: serverBlip,
             },
           });
-          opened = true;
+          opened = !serverBlip;
         }
       }
       for (const alarm of active) {
@@ -343,6 +369,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
   }
 }
 
+const BLIP_MARGIN_MS = 20_000;
+const SERVER_ROOT_CAUSE = 'Jaringan server NMS';
 const FLAP_WINDOW_MS = 5 * 60 * 1000;
 const FLAP_MIN_FLIPS = 4;
 

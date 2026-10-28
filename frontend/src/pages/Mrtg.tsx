@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -85,6 +86,7 @@ export function MrtgPage() {
   const [kind, setKind] = useState<'probe' | 'interface'>('probe');
   const [choices, setChoices] = useState<{ probes: Choice[]; interfaces: Choice[]; snmp: 'off' | 'waiting' | 'ready' }>({ probes: [], interfaces: [], snmp: 'off' });
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const load = () => {
@@ -185,11 +187,8 @@ export function MrtgPage() {
     }
   }
 
-  async function removeGraph(graphId: string) {
-    if (!id) return;
-    setError('');
-    await api(`/api/devices/${id}/mrtg/graphs/${graphId}`, { method: 'DELETE' });
-    setApplied((current) => ({ ...current }));
+  function askRemove(item: SavedGraph) {
+    setPendingDelete({ id: item.id, name: item.name });
   }
 
   async function exportReport(kind: 'png' | 'pdf') {
@@ -341,7 +340,7 @@ export function MrtgPage() {
                   ) : (
                     <StatLine label="" stats={{ min: item.min ?? null, avg: item.avg ?? null, max: item.max ?? null }} unit={item.unit} threshold={item.threshold} />
                   )}
-                  {can(user?.role, 'noc') ? <button className="btn-ghost" type="button" onClick={() => void removeGraph(item.id)}>Hapus</button> : null}
+                  {can(user?.role, 'noc') ? <button className="btn-ghost" type="button" onClick={() => askRemove(item)}>Hapus</button> : null}
                 </div>
                 {item.kind === 'interface' ? (
                   <TrafficChart
@@ -372,7 +371,88 @@ export function MrtgPage() {
           </div>
         )}
       </section>
+      {pendingDelete && id ? (
+        <DeleteGraphDialog
+          deviceId={id}
+          graph={pendingDelete}
+          onClose={() => setPendingDelete(null)}
+          onDeleted={() => {
+            setPendingDelete(null);
+            setApplied((current) => ({ ...current }));
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function DeleteGraphDialog({ deviceId, graph, onClose, onDeleted }: { deviceId: string; graph: { id: string; name: string }; onClose: () => void; onDeleted: () => void }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [removing, setRemoving] = useState(false);
+
+  function close() {
+    if (!removing) onClose();
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!password || removing) return;
+    setRemoving(true);
+    setError('');
+    try {
+      await api(`/api/devices/${deviceId}/mrtg/graphs/${graph.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ password }),
+      });
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Graph gagal dihapus');
+      setRemoving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="confirm-backdrop" onMouseDown={close}>
+      <form
+        className="confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mrtg-delete-title"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => void submit(event)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') close();
+        }}
+      >
+        <h3 id="mrtg-delete-title">Hapus graph?</h3>
+        <p>
+          Graph <strong>{graph.name}</strong> akan dihapus dari perangkat ini dan pengumpulan datanya dihentikan.
+          Histori yang sudah terkumpul tidak lagi ditampilkan. Masukkan password akun untuk melanjutkan.
+        </p>
+        <label className="field">
+          <span>Password akun</span>
+          <input
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            spellCheck={false}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={removing}
+            required
+          />
+        </label>
+        {error ? <div className="error" role="alert">{error}</div> : null}
+        <div className="confirm-actions">
+          <button className="btn-ghost" type="button" onClick={close} disabled={removing}>Batal</button>
+          <button className="btn-danger" type="submit" disabled={removing || !password}>
+            {removing ? 'Menghapus...' : 'Hapus graph'}
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   );
 }
 

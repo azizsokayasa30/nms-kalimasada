@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Logger, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
-import { Device } from '@prisma/client';
+import { ArrayMaxSize, IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Device, DeviceType, Prisma } from '@prisma/client';
 import { Roles } from '../auth/auth.decorators';
 import { PrismaService } from '../infra/prisma.service';
 import { presentDevice } from '../devices/present';
@@ -16,6 +16,27 @@ class PositionBody {
   @Type(() => Number)
   @IsNumber()
   y!: number;
+}
+
+class LayoutNodeBody {
+  @IsString()
+  id!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  x!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  y!: number;
+}
+
+class LayoutBody {
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @ValidateNested({ each: true })
+  @Type(() => LayoutNodeBody)
+  nodes!: LayoutNodeBody[];
 }
 
 class LinkBody {
@@ -53,9 +74,21 @@ export class TopologyController {
   ) {}
 
   @Get()
-  async get(@Query('location') location?: string) {
+  async get(
+    @Query('location') location?: string,
+    @Query('groupId') groupId?: string,
+    @Query('type') type?: string,
+  ) {
+    const where: Prisma.DeviceWhereInput = {};
+    if (location) where.location = location;
+    if (groupId === 'none') where.groupId = null;
+    else if (groupId) where.groupId = groupId;
+    if (type) {
+      if (!(type in DeviceType)) throw new BadRequestException('Jenis device tidak dikenal');
+      where.deviceType = type as DeviceType;
+    }
     const devices = await this.prisma.device.findMany({
-      where: location ? { location } : undefined,
+      where,
       include: { parent: { select: { id: true, name: true } } },
       orderBy: { name: 'asc' },
     });
@@ -67,6 +100,14 @@ export class TopologyController {
       where: { location: { not: null } },
       distinct: ['location'],
       select: { location: true },
+    });
+    const groups = await this.prisma.deviceGroup.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    const types = await this.prisma.device.findMany({
+      distinct: ['deviceType'],
+      select: { deviceType: true },
     });
     const traffic = await this.linkTraffic(links, devices);
     return {
@@ -81,6 +122,8 @@ export class TopologyController {
         traffic: traffic.get(link.id) ?? null,
       })),
       locations: locations.map((row) => row.location).filter((value): value is string => Boolean(value)),
+      groups,
+      types: types.map((row) => row.deviceType),
     };
   }
 
@@ -88,6 +131,26 @@ export class TopologyController {
   @Patch('nodes/:id')
   async move(@Param('id') id: string, @Body() body: PositionBody) {
     await this.prisma.device.update({ where: { id }, data: { posX: body.x, posY: body.y } });
+    return { ok: true };
+  }
+
+  @Roles('noc')
+  @Patch('layout')
+  async layout(@Body() body: LayoutBody) {
+    if (!body.nodes.length) return { ok: true };
+    const existing = await this.prisma.device.findMany({
+      where: { id: { in: body.nodes.map((node) => node.id) } },
+      select: { id: true },
+    });
+    const allowed = new Set(existing.map((device) => device.id));
+    const nodes = body.nodes.filter((node) => allowed.has(node.id));
+    if (!nodes.length) return { ok: true };
+    await this.prisma.$transaction(
+      nodes.map((node) => this.prisma.device.update({
+        where: { id: node.id },
+        data: { posX: Math.round(node.x), posY: Math.round(node.y) },
+      })),
+    );
     return { ok: true };
   }
 

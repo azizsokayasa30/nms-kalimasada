@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import {
   Background,
+  BackgroundVariant,
   ControlButton,
   Controls,
   Handle,
   Position,
   ReactFlow,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -47,26 +52,45 @@ type Link = {
 
 type PortSide = { id: string; name: string; snmp: 'off' | 'waiting' | 'ready'; interfaces: Array<{ key: string; name: string }> };
 
-function DeviceNode({ data }: NodeProps) {
-  const status = String(data.status ?? 'unknown');
+type DeviceData = { name: string; ip: string; kind: string; status: string; latency: string };
+type FlowNode = Node<DeviceData, 'device'>;
+
+const GRID = 40;
+const SNAP: [number, number] = [GRID, GRID];
+
+const DeviceNode = memo(function DeviceNode({ data }: NodeProps<FlowNode>) {
+  const status = data.status || 'unknown';
+  const offline = status === 'down' || status === 'unreachable';
+  const mark = status === 'up' ? 'up' : offline ? 'down' : '';
   return (
     <div className={`node ${status}`}>
       <Handle type="target" position={Position.Top} />
-      <strong>{String(data.name)}</strong>
-      <small>{String(data.ip)}</small>
-      <small>{String(data.kind)} · {String(data.latency)}</small>
+      <strong>{data.name}</strong>
+      <small>{data.ip}</small>
+      <small>{data.kind} · {data.latency}</small>
+      {mark ? <span className={`node-state ${mark}`}>{mark === 'up' ? 'UP' : 'DOWN'}</span> : null}
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
-}
+});
 
 const nodeTypes = { device: DeviceNode };
 
+type Filters = { location: string; groupId: string; type: string };
+
+function filterQuery(filters: Filters, keys: { location: string; groupId: string; type: string }) {
+  const query = new URLSearchParams();
+  if (filters.location) query.set(keys.location, filters.location);
+  if (filters.groupId) query.set(keys.groupId, filters.groupId);
+  if (filters.type) query.set(keys.type, filters.type);
+  const text = query.toString();
+  return text ? `?${text}` : '';
+}
+
 let topologyScreen: Window | null = null;
 
-function openTopologyScreen(location: string) {
-  const query = location ? `?lokasi=${encodeURIComponent(location)}` : '';
-  const url = `/topology/layar${query}`;
+function openTopologyScreen(filters: Filters) {
+  const url = `/topology/layar${filterQuery(filters, { location: 'lokasi', groupId: 'grup', type: 'jenis' })}`;
   if (topologyScreen && !topologyScreen.closed) {
     const next = new URL(url, window.location.origin).href;
     if (topologyScreen.location.href !== next) topologyScreen.location.replace(next);
@@ -97,7 +121,30 @@ function FullscreenIcon({ exit = false }: { exit?: boolean }) {
   );
 }
 
-function MapTools({ present, location, stage }: { present: boolean; location: string; stage: RefObject<HTMLDivElement | null> }) {
+function FitOnChange({ token, paused }: { token: string; paused: boolean }) {
+  const { fitView, getNodes } = useReactFlow();
+  const seen = useRef('');
+  useEffect(() => {
+    if (paused || !token || seen.current === token) return;
+    let frames = 0;
+    let frame = 0;
+    const tick = () => {
+      frames += 1;
+      const ready = getNodes().some((node) => (node.measured?.width ?? 0) > 0);
+      if (!ready && frames < 30) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+      seen.current = token;
+      void fitView({ duration: 180, padding: 0.12 });
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [token, paused, fitView, getNodes]);
+  return null;
+}
+
+function MapTools({ present, filters, stage }: { present: boolean; filters: Filters; stage: RefObject<HTMLDivElement | null> }) {
   const { fitView } = useReactFlow();
   const [full, setFull] = useState(false);
 
@@ -129,7 +176,7 @@ function MapTools({ present, location, stage }: { present: boolean; location: st
       void document.exitFullscreen();
       return;
     }
-    if (!present && openTopologyScreen(location)) return;
+    if (!present && openTopologyScreen(filters)) return;
     enterFullscreen();
   }
 
@@ -144,6 +191,7 @@ function MapTools({ present, location, stage }: { present: boolean; location: st
       <Controls
         showZoom={false}
         showFitView={false}
+        showInteractive={false}
         className="flow-controls-tools"
         aria-label="Layar penuh dan kunci"
       >
@@ -168,23 +216,47 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
-  const [location, setLocation] = useState(() => params.get('lokasi') ?? '');
+  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [types, setTypes] = useState<string[]>([]);
+  const [filters, setFilters] = useState<Filters>(() => ({
+    location: params.get('lokasi') ?? '',
+    groupId: params.get('grup') ?? '',
+    type: params.get('jenis') ?? '',
+  }));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ports, setPorts] = useState<{ source: PortSide; target: PortSide } | null>(null);
   const [portChoice, setPortChoice] = useState('');
   const [portError, setPortError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [savingLayout, setSavingLayout] = useState(false);
+  const [layoutError, setLayoutError] = useState('');
+  const [baseline, setBaseline] = useState<Map<string, { x: number; y: number }> | null>(null);
+  const [nodes, setNodes, applyNodeChanges] = useNodesState<FlowNode>([]);
+  const [edges, setEdges, applyEdgeChanges] = useEdgesState<Edge>([]);
+  const editingRef = useRef(false);
+  const draggingRef = useRef(false);
   const selected = links.find((link) => link.id === selectedId) ?? null;
-  const canManage = can(user?.role, 'noc');
+  const canManage = can(user?.role, 'noc') && !present;
+  editingRef.current = editing;
 
   const load = useCallback(() => {
-    const query = location ? `?location=${encodeURIComponent(location)}` : '';
-    void api<{ devices: Device[]; links: Link[]; locations: string[] }>(`/api/topology${query}`).then((result) => {
+    const query = filterQuery(filters, { location: 'location', groupId: 'groupId', type: 'type' });
+    void api<{
+      devices: Device[];
+      links: Link[];
+      locations: string[];
+      groups: Array<{ id: string; name: string }>;
+      types: string[];
+    }>(`/api/topology${query}`).then((result) => {
       setDevices(result.devices);
       setLinks(result.links);
       setLocations(result.locations);
+      setGroups(result.groups);
+      setTypes(result.types);
     });
-  }, [location]);
+  }, [filters]);
 
   useEffect(() => {
     load();
@@ -207,39 +279,103 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
     };
   }, [present]);
 
-  const nodes = useMemo<Node[]>(() => {
-    const placed = layoutMissing(devices);
-    return devices.map((device) => ({
-      id: device.id,
-      type: 'device',
-      position: { x: device.posX ?? placed.get(device.id)?.x ?? 40, y: device.posY ?? placed.get(device.id)?.y ?? 40 },
-      data: {
-        name: device.name,
-        ip: device.ipAddress,
-        kind: deviceTypeLabels[device.deviceType] ?? device.deviceType,
-        status: device.status,
-        latency: formatLatency(device.latencyMs),
-      },
-    }));
-  }, [devices]);
+  useEffect(() => {
+    if (draggingRef.current) return;
+    setNodes((current) => mergeNodes(current, devices, editingRef.current));
+    setEdges((current) => mergeEdges(current, devices, links));
+  }, [devices, links, setNodes, setEdges]);
 
-  const edges = useMemo<Edge[]>(() => links.map((link) => {
-    const target = devices.find((device) => device.id === link.targetId);
-    const down = target?.status === 'down' || target?.status === 'unreachable';
-    const label = down ? 'down' : trafficLabel(link);
-    return {
-      id: link.id,
-      source: link.sourceId,
-      target: link.targetId,
-      animated: !down,
-      style: { stroke: down ? '#c42318' : '#1d4e89', strokeWidth: down ? 2 : trafficWidth(link.traffic) },
-      label,
-      labelStyle: { fill: down ? '#c42318' : 'var(--ink)', fontSize: 11, fontWeight: 600 },
-      labelBgStyle: { fill: 'var(--card)', fillOpacity: 0.9 },
-      labelBgPadding: [6, 3] as [number, number],
-      labelBgBorderRadius: 4,
+  useEffect(() => {
+    if (!editing) return;
+    const onLeave = (event: BeforeUnloadEvent) => {
+      if (!layoutDirty(nodes, baseline)) return;
+      event.preventDefault();
+      event.returnValue = '';
     };
-  }), [devices, links]);
+    window.addEventListener('beforeunload', onLeave);
+    return () => window.removeEventListener('beforeunload', onLeave);
+  }, [editing, nodes, baseline]);
+
+  const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
+    const editable = editingRef.current;
+    applyNodeChanges(changes.filter((change) => change.type !== 'remove' && (change.type !== 'position' || editable)));
+  }, [applyNodeChanges]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    applyEdgeChanges(changes.filter((change) => change.type !== 'remove'));
+  }, [applyEdgeChanges]);
+
+  const dirty = editing && layoutDirty(nodes, baseline);
+  const fitToken = `${filters.location}|${filters.groupId}|${filters.type}:${devices.map((device) => device.id).join(',')}`;
+
+  function finishEdit() {
+    editingRef.current = false;
+    setEditing(false);
+    setBaseline(null);
+    setLayoutError('');
+    setDragging(false);
+    draggingRef.current = false;
+  }
+
+  function startEdit() {
+    editingRef.current = true;
+    setBaseline(new Map(nodes.map((node) => [node.id, { x: node.position.x, y: node.position.y }])));
+    setLayoutError('');
+    setEditing(true);
+    if (selectedId) void selectLink(selectedId);
+  }
+
+  function discardEdit() {
+    if (baseline) {
+      setNodes((current) => current.map((node) => {
+        const origin = baseline.get(node.id);
+        return origin ? { ...node, position: { x: origin.x, y: origin.y } } : node;
+      }));
+    }
+    finishEdit();
+  }
+
+  function cancelEdit() {
+    if (dirty && !window.confirm('Buang perubahan tata letak?')) return;
+    discardEdit();
+  }
+
+  function changeFilter(key: keyof Filters, value: string) {
+    if (value === filters[key]) return;
+    if (dirty && !window.confirm('Perubahan tata letak belum disimpan. Buang dan ganti filter?')) return;
+    if (editing) discardEdit();
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveLayout() {
+    const changed = movedNodes(nodes, baseline);
+    if (!changed.length) {
+      finishEdit();
+      return;
+    }
+    setSavingLayout(true);
+    setLayoutError('');
+    try {
+      await api('/api/topology/layout', {
+        method: 'PATCH',
+        body: JSON.stringify({ nodes: changed }),
+      });
+      const placed = new Map(changed.map((node) => [node.id, node]));
+      setDevices((list) => list.map((device) => {
+        const next = placed.get(device.id);
+        return next ? { ...device, posX: next.x, posY: next.y } : device;
+      }));
+      setNodes((current) => current.map((node) => {
+        const next = placed.get(node.id);
+        return next ? { ...node, position: { x: next.x, y: next.y } } : node;
+      }));
+      finishEdit();
+    } catch (err) {
+      setLayoutError(err instanceof Error ? err.message : 'Tata letak gagal disimpan');
+    } finally {
+      setSavingLayout(false);
+    }
+  }
 
   async function selectLink(id: string) {
     setSelectedId(id);
@@ -247,7 +383,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
     setPortError('');
     const link = links.find((item) => item.id === id);
     setPortChoice(link?.interfaceDeviceId && link.interfaceKey ? `${link.interfaceDeviceId}|${link.interfaceKey}` : '');
-    if (!canManage) return;
+    if (!editingRef.current) return;
     try {
       setPorts(await api<{ source: PortSide; target: PortSide }>(`/api/topology/links/${id}/interfaces`));
     } catch (err) {
@@ -290,7 +426,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
   }
 
   async function onConnect(connection: Connection) {
-    if (!canManage || !connection.source || !connection.target) return;
+    if (!editingRef.current || !connection.source || !connection.target) return;
     await api('/api/topology/links', {
       method: 'POST',
       body: JSON.stringify({ sourceId: connection.source, targetId: connection.target }),
@@ -301,32 +437,80 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
   return (
     <div className={present ? 'topology-present' : undefined} style={{ position: 'relative', height: present ? '100%' : undefined }}>
       {present ? null : (
-        <div className="toolbar" style={{ marginBottom: 10 }}>
-          <select value={location} onChange={(event) => setLocation(event.target.value)}>
+        <div className="toolbar topology-toolbar">
+          <select value={filters.location} onChange={(event) => changeFilter('location', event.target.value)} aria-label="Filter lokasi">
             <option value="">Semua lokasi</option>
             {locations.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
-          <span className="sub">Geser node untuk menyimpan posisi. Klik dua kali untuk membuka detail.</span>
+          <select value={filters.groupId} onChange={(event) => changeFilter('groupId', event.target.value)} aria-label="Filter grup">
+            <option value="">Semua grup</option>
+            {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            <option value="none">Tanpa grup</option>
+          </select>
+          <select value={filters.type} onChange={(event) => changeFilter('type', event.target.value)} aria-label="Filter jenis device">
+            <option value="">Semua jenis device</option>
+            {types.map((item) => <option key={item} value={item}>{deviceTypeLabels[item] ?? item}</option>)}
+          </select>
+          {canManage ? (
+            <div className="topology-actions">
+              {editing ? (
+                <>
+                  <button className="btn-ghost" type="button" disabled={savingLayout} onClick={cancelEdit}>Batal</button>
+                  <button className="btn" type="button" disabled={savingLayout} onClick={() => void saveLayout()}>
+                    {savingLayout ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                </>
+              ) : (
+                <button className="btn" type="button" onClick={startEdit}>EDIT</button>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
-      <div className="flow" ref={stageRef}>
+      {present ? null : (
+        <div className="topology-hint">
+          <span className="sub">
+            {editing
+              ? `Geser perangkat, posisi menempel ke grid ${GRID}px. Simpan jika sudah selesai.`
+              : canManage
+                ? 'Peta terkunci. Tekan EDIT untuk menggeser perangkat.'
+                : 'Klik garis untuk trafik. Klik dua kali perangkat untuk detail.'}
+          </span>
+          {layoutError ? <span className="error">{layoutError}</span> : null}
+        </div>
+      )}
+      <div className={`flow${editing ? ' editing' : ''}${dragging ? ' dragging' : ''}`} ref={stageRef}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
-          fitView
-          nodesDraggable={can(user?.role, 'noc')}
-          nodesConnectable={canManage}
+          nodesDraggable={editing}
+          nodesConnectable={editing}
+          minZoom={0.2}
+          maxZoom={1.5}
+          edgesReconnectable={false}
+          elementsSelectable={!present}
+          snapToGrid={editing}
+          snapGrid={SNAP}
+          nodeDragThreshold={1}
+          onlyRenderVisibleElements
+          zoomOnDoubleClick={!editing}
           deleteKeyCode={null}
           onNodeDoubleClick={(_, node) => {
-            if (present) return;
+            if (present || editing) return;
             navigate(`/devices/${node.id}`);
           }}
-          onNodeDragStop={(_, node) => {
-            void api(`/api/topology/nodes/${node.id}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ x: node.position.x, y: node.position.y }),
-            });
+          onNodeDragStart={() => {
+            draggingRef.current = true;
+            setDragging(true);
+          }}
+          onNodeDragStop={() => {
+            draggingRef.current = false;
+            setDragging(false);
+            setNodes((current) => mergeNodes(current, devices, true));
+            setEdges((current) => mergeEdges(current, devices, links));
           }}
           onConnect={(connection) => void onConnect(connection)}
           onEdgeClick={(_, edge) => {
@@ -334,8 +518,13 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
           }}
           onPaneClick={() => setSelectedId(null)}
         >
-          <Background />
-          <MapTools present={present} location={location} stage={stageRef} />
+          <Background
+            variant={editing ? BackgroundVariant.Lines : BackgroundVariant.Dots}
+            gap={GRID}
+            size={1}
+          />
+          <FitOnChange token={fitToken} paused={editing} />
+          <MapTools present={present} filters={filters} stage={stageRef} />
         </ReactFlow>
       </div>
       {selected && !present ? (
@@ -354,9 +543,9 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
               )}
             </div>
           ) : (
-            <p className="sub">Pilih interface agar trafik tampil di garis.</p>
+            <p className="sub">{editing ? 'Pilih interface agar trafik tampil di garis.' : 'Interface belum dipilih.'}</p>
           )}
-          {canManage ? (
+          {editing ? (
             <>
               <label className="field">
                 <span>Interface</span>
@@ -374,7 +563,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
               {portError ? <div className="error">{portError}</div> : null}
               <div className="toolbar">
                 <button className="btn" type="button" disabled={!ports || saving} onClick={() => void saveInterface()}>
-                  {saving ? 'Menyimpan...' : 'Simpan'}
+                  {saving ? 'Menyimpan...' : 'Simpan interface'}
                 </button>
                 <button className="btn-danger" type="button" disabled={saving} onClick={() => void removeLink()}>Hapus link</button>
               </div>
@@ -406,6 +595,94 @@ function physicalFirst(ports: PortSide['interfaces']) {
 
 function nameOf(devices: Device[], id: string | null) {
   return devices.find((device) => device.id === id)?.name ?? '—';
+}
+
+function deviceNodeData(device: Device): DeviceData {
+  return {
+    name: device.name,
+    ip: device.ipAddress,
+    kind: deviceTypeLabels[device.deviceType] ?? device.deviceType,
+    status: device.status,
+    latency: formatLatency(device.latencyMs),
+  };
+}
+
+function sameData(a: DeviceData, b: DeviceData) {
+  return a.name === b.name && a.ip === b.ip && a.kind === b.kind && a.status === b.status && a.latency === b.latency;
+}
+
+function mergeNodes(current: FlowNode[], devices: Device[], keepPositions: boolean) {
+  const placed = layoutMissing(devices);
+  const prev = new Map(current.map((node) => [node.id, node]));
+  const next = devices.map((device) => {
+    const old = prev.get(device.id);
+    const server = {
+      x: device.posX ?? placed.get(device.id)?.x ?? 40,
+      y: device.posY ?? placed.get(device.id)?.y ?? 40,
+    };
+    const position = keepPositions && old ? old.position : server;
+    const data = deviceNodeData(device);
+    if (old && old.position.x === position.x && old.position.y === position.y && sameData(old.data, data)) return old;
+    return { id: device.id, type: 'device' as const, position, data, selected: old?.selected };
+  });
+  if (next.length === current.length && next.every((node, index) => node === current[index])) return current;
+  return next;
+}
+
+function mergeEdges(current: Edge[], devices: Device[], links: Link[]) {
+  const statusOf = new Map(devices.map((device) => [device.id, device.status]));
+  const prev = new Map(current.map((edge) => [edge.id, edge]));
+  const next = links.map((link) => {
+    const status = statusOf.get(link.targetId);
+    const down = status === 'down' || status === 'unreachable';
+    const label = down ? 'down' : trafficLabel(link);
+    const stroke = down ? '#c42318' : '#1d4e89';
+    const strokeWidth = down ? 2 : trafficWidth(link.traffic);
+    const old = prev.get(link.id);
+    if (
+      old
+      && old.source === link.sourceId
+      && old.target === link.targetId
+      && old.label === label
+      && old.animated === !down
+      && old.style?.stroke === stroke
+      && old.style?.strokeWidth === strokeWidth
+    ) return old;
+    return {
+      id: link.id,
+      source: link.sourceId,
+      target: link.targetId,
+      animated: !down,
+      style: { stroke, strokeWidth },
+      label,
+      labelStyle: { fill: down ? '#c42318' : 'var(--ink)', fontSize: 11, fontWeight: 600 },
+      labelBgStyle: { fill: 'var(--card)', fillOpacity: 0.9 },
+      labelBgPadding: [6, 3] as [number, number],
+      labelBgBorderRadius: 4,
+    };
+  });
+  if (next.length === current.length && next.every((edge, index) => edge === current[index])) return current;
+  return next;
+}
+
+function layoutDirty(nodes: FlowNode[], baseline: Map<string, { x: number; y: number }> | null) {
+  if (!baseline) return false;
+  return nodes.some((node) => {
+    const origin = baseline.get(node.id);
+    if (!origin) return false;
+    return Math.round(origin.x) !== Math.round(node.position.x) || Math.round(origin.y) !== Math.round(node.position.y);
+  });
+}
+
+function movedNodes(nodes: FlowNode[], baseline: Map<string, { x: number; y: number }> | null) {
+  const changed: Array<{ id: string; x: number; y: number }> = [];
+  for (const node of nodes) {
+    const x = Math.round(node.position.x);
+    const y = Math.round(node.position.y);
+    const origin = baseline?.get(node.id);
+    if (!origin || Math.round(origin.x) !== x || Math.round(origin.y) !== y) changed.push({ id: node.id, x, y });
+  }
+  return changed;
 }
 
 function layoutMissing(devices: Device[]) {

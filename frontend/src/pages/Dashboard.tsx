@@ -213,7 +213,7 @@ export function DashboardPage() {
           label="Active Alarm"
           value={data?.activeAlarms ?? '—'}
           live={(data?.down ?? 0) > 0}
-          foot={data ? (data.downstream ? `${data.downstream} perangkat di bawahnya tidak terjangkau` : 'Tidak ada induk yang memutus anak') : undefined}
+          foot={data?.downstream ? `${data.downstream} perangkat di bawahnya tidak terjangkau` : undefined}
         />
         {hasBandwidth ? (
           <Kpi

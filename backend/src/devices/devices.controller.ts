@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { Transform, Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
-import { Roles } from '../auth/auth.decorators';
+import { AuthUser, Roles } from '../auth/auth.decorators';
 import { DeviceBody, UpdateDeviceBody } from './devices.dto';
 import { DevicesService } from './devices.service';
 
@@ -21,6 +21,13 @@ class GraphBody {
   @IsString()
   @MinLength(1)
   key!: string;
+}
+
+class RemoveGraphBody {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  password!: string;
 }
 
 class GroupBody {
@@ -112,8 +119,13 @@ export class DevicesController {
 
   @Roles('noc')
   @Delete(':id/mrtg/graphs/:graphId')
-  removeMrtgGraph(@Param('id') id: string, @Param('graphId') graphId: string) {
-    return this.devices.removeMrtgGraph(id, graphId);
+  removeMrtgGraph(
+    @Req() req: { user: AuthUser },
+    @Param('id') id: string,
+    @Param('graphId') graphId: string,
+    @Body() body: RemoveGraphBody,
+  ) {
+    return this.devices.removeMrtgGraph(id, graphId, req.user.sub, body.password);
   }
 
   @Get(':id/mrtg')

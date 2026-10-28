@@ -9,7 +9,10 @@ import { PrismaModule } from './infra/prisma.module';
 import { InternetController } from './internet/internet.controller';
 import { InternetService } from './internet/internet.service';
 import { SyncService } from './monitoring/sync.service';
+import { UplinkService } from './monitoring/uplink.service';
 import { WebhookController } from './monitoring/webhook.controller';
+import { NetdClient } from './network/netd.client';
+import { NetworkController } from './network/network.controller';
 import { NotificationConfig } from './notifications/notification-config';
 import { NotificationService } from './notifications/notification.service';
 import { NotificationsController } from './notifications/notifications.controller';
@@ -34,17 +37,20 @@ import { ZabbixService } from './zabbix/zabbix.service';
     WebhookController,
     NotificationsController,
     InternetController,
+    NetworkController,
   ],
   providers: [
     ZabbixService,
     ProvisionService,
     RealtimeGateway,
     SyncService,
+    UplinkService,
     DevicesService,
     IntegrationConfig,
     NotificationConfig,
     NotificationService,
     InternetService,
+    NetdClient,
   ],
 })
 export class AppModule {}

@@ -149,8 +149,8 @@ export class ProvisionService {
     });
     const lossTriggerId = await this.ensureTrigger(device.zabbixLossTriggerId, {
       description: `${technical} high packet loss`,
-      expression: `min(/${technical}/icmppingloss,#3)>${settings.lossWarnPct}`,
-      recovery_expression: `max(/${technical}/icmppingloss,#3)<=${settings.lossWarnPct}`,
+      expression: `min(/${technical}/icmppingloss,#3)>${settings.lossWarnPct} and max(/${technical}/icmppingloss,#3)<100`,
+      recovery_expression: `max(/${technical}/icmppingloss,#3)<=${settings.lossWarnPct} or last(/${technical}/icmppingloss)=100`,
       priority: 2,
     });
     const maintenanceId = await this.syncMaintenance(device, hostId);
@@ -571,7 +571,7 @@ export class ProvisionService {
     }
     if (!device.maintenance) return null;
     const now = Math.floor(Date.now() / 1000);
-    const period = 5 * 365 * 24 * 3600;
+    const period = 86_399_940;
     const created = await this.zabbix.call<{ maintenanceids: string[] }>('maintenance.create', {
       name: `kalimasada-${device.id}`,
       active_since: now,
