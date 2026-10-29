@@ -496,7 +496,7 @@ export function TopologyPage({ present = false }: { present?: boolean }) {
           snapGrid={SNAP}
           nodeDragThreshold={1}
           onlyRenderVisibleElements
-          zoomOnDoubleClick={!editing}
+          zoomOnDoubleClick={false}
           deleteKeyCode={null}
           onNodeDoubleClick={(_, node) => {
             if (present || editing) return;

@@ -210,7 +210,7 @@ function initials(name?: string) {
 
 function NavSvg({ children }: { children: ReactNode }) {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
     </svg>
   );
@@ -219,8 +219,10 @@ function NavSvg({ children }: { children: ReactNode }) {
 function HomeIcon() {
   return (
     <NavSvg>
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
+      <rect x="3" y="3" width="7.5" height="9" rx="2" />
+      <rect x="13.5" y="3" width="7.5" height="5" rx="2" />
+      <rect x="13.5" y="11" width="7.5" height="10" rx="2" />
+      <rect x="3" y="15" width="7.5" height="6" rx="2" />
     </NavSvg>
   );
 }
@@ -228,9 +230,11 @@ function HomeIcon() {
 function DevicesIcon() {
   return (
     <NavSvg>
-      <rect x="3" y="4" width="18" height="6" rx="1.5" />
-      <rect x="3" y="14" width="18" height="6" rx="1.5" />
-      <path d="M7 7h.01M7 17h.01" />
+      <rect x="3" y="13" width="18" height="7.5" rx="2.5" />
+      <path d="M7 16.75h.01M10.5 16.75h.01M14.5 16.75H17" />
+      <path d="M12 13v-3" />
+      <path d="M8.8 7.6a4.5 4.5 0 0 1 6.4 0" />
+      <path d="M6.3 5.1a8 8 0 0 1 11.4 0" />
     </NavSvg>
   );
 }
@@ -238,10 +242,10 @@ function DevicesIcon() {
 function TopologyIcon() {
   return (
     <NavSvg>
-      <circle cx="12" cy="5" r="2.5" />
-      <circle cx="5" cy="19" r="2.5" />
-      <circle cx="19" cy="19" r="2.5" />
-      <path d="M12 7.5v4M12 11.5l-5.5 5.5M12 11.5l5.5 5.5" />
+      <rect x="9" y="2.5" width="6" height="6" rx="1.75" />
+      <rect x="2.5" y="15.5" width="6" height="6" rx="1.75" />
+      <rect x="15.5" y="15.5" width="6" height="6" rx="1.75" />
+      <path d="M12 8.5V12M5.5 15.5V13a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v2.5" />
     </NavSvg>
   );
 }
@@ -249,8 +253,8 @@ function TopologyIcon() {
 function BellIcon() {
   return (
     <NavSvg>
-      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      <path d="M10.3 21a2 2 0 0 0 3.4 0" />
+      <path d="M3.3 15.3A1 1 0 0 0 4 17h16a1 1 0 0 0 .7-1.7C19.4 14 18 12.5 18 8a6 6 0 0 0-12 0c0 4.5-1.4 6-2.7 7.3" />
     </NavSvg>
   );
 }
@@ -258,8 +262,8 @@ function BellIcon() {
 function ChartIcon() {
   return (
     <NavSvg>
-      <path d="M3 3v18h18" />
-      <path d="m7 15 4-5 3 3 5-6" />
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7" />
     </NavSvg>
   );
 }
@@ -267,8 +271,9 @@ function ChartIcon() {
 function GearIcon() {
   return (
     <NavSvg>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      <path d="M20 7h-9M14 17H4" />
+      <circle cx="7" cy="7" r="3" />
+      <circle cx="17" cy="17" r="3" />
     </NavSvg>
   );
 }

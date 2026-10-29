@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { POPUP_SETTINGS_EVENT, type PopupConfig } from '../components/AlarmPopup';
+import { PrefActions, PrefFlash, PrefRow, PrefSection, PrefSwitch } from '../components/Pref';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { can } from '../lib/format';
@@ -203,175 +204,234 @@ export function NotificationTab() {
 
   if (!admin) {
     return (
-      <div className="form-grid">
-        <h3>Popup di dashboard</h3>
-        <div className="full sub">
-          Popup {popup.enabled ? 'aktif' : 'mati'} untuk: {popup.events.map((item) => eventLabels[item as EventId]).join(', ') || 'tidak ada kejadian'}.
-        </div>
-        <div className="full sub">Hanya admin yang dapat mengubah popup, Telegram, dan WhatsApp.</div>
-        {error ? <div className="error">{error}</div> : null}
+      <div className="pref">
+        <PrefSection title="Popup di dashboard" description="Kotak pemberitahuan di layar saat ada alarm">
+          <div className="pref-list">
+            <PrefRow title="Status">
+              <span className={popup.enabled ? 'badge up' : 'badge unknown'}>{popup.enabled ? 'Aktif' : 'Mati'}</span>
+            </PrefRow>
+            <PrefRow title="Kejadian">
+              <span className="pref-value">{popup.events.map((item) => eventLabels[item as EventId]).join(', ') || 'Tidak ada'}</span>
+            </PrefRow>
+          </div>
+        </PrefSection>
+        <p className="pref-note">Hanya admin yang dapat mengubah popup, Telegram, dan WhatsApp.</p>
+        <PrefFlash message="" error={error} />
       </div>
     );
   }
 
+  const usedChats = lines(telegram.chatIds);
+
   return (
     <>
-      <form className="form-grid" onSubmit={(event) => void save(event)}>
-        <h3>Popup di dashboard</h3>
-        <label className="field check full">
-          <input type="checkbox" checked={popup.enabled} onChange={(event) => setPopup({ ...popup, enabled: event.target.checked })} />
-          Tampilkan popup saat ada alarm
-        </label>
-        <EventChecks value={popup.events as EventId[]} onChange={(events) => setPopup({ ...popup, events })} />
-        <label className="field">
-          <span>Lama tampil (detik, 0 = sampai ditutup)</span>
-          <input type="number" min={0} max={600} value={popup.durationSec} onChange={(event) => setPopup({ ...popup, durationSec: Number(event.target.value) })} />
-        </label>
-        <label className="field">
-          <span>Posisi</span>
-          <select value={popup.position} onChange={(event) => setPopup({ ...popup, position: event.target.value as PopupConfig['position'] })}>
-            <option value="top-right">Kanan atas</option>
-            <option value="bottom-right">Kanan bawah</option>
-          </select>
-        </label>
-
-        <h3>Telegram</h3>
-        <label className="field check full">
-          <input type="checkbox" checked={telegram.enabled} onChange={(event) => setTelegram({ ...telegram, enabled: event.target.checked })} />
-          Kirim pemberitahuan ke Telegram
-        </label>
-        <label className="field full">
-          <span>Token bot {telegram.botTokenSet ? '(tersimpan)' : ''}</span>
-          <input
-            className="secret"
-            type="password"
-            autoComplete="new-password"
-            value={telegram.botToken}
-            placeholder={telegram.botTokenSet ? 'Kosongkan jika tidak diubah' : '123456789:AA...'}
-            onChange={(event) => setTelegram({ ...telegram, botToken: event.target.value })}
-          />
-        </label>
-        <div className="toolbar">
-          <button className="btn-ghost" type="button" disabled={busy === 'bot'} onClick={checkBot}>{busy === 'bot' ? 'Memeriksa...' : 'Cek bot'}</button>
-          <button className="btn-ghost" type="button" disabled={busy === 'chats'} onClick={findChats}>{busy === 'chats' ? 'Mencari...' : 'Cari chat ID'}</button>
-          {telegram.botTokenSet ? (
-            <label className="check"><input type="checkbox" checked={telegram.clearBotToken} onChange={(event) => setTelegram({ ...telegram, clearBotToken: event.target.checked })} /> Hapus token tersimpan</label>
-          ) : null}
-          {bot ? <span className="status-ok">Bot: {bot}</span> : null}
-        </div>
-        <div className="full sub">
-          Buat bot lewat @BotFather di Telegram, lalu tempel tokennya di sini. Kirim /start ke bot, atau tambahkan bot ke grup NOC dan kirim satu pesan, lalu klik Cari chat ID.
-        </div>
-        {chats ? (
-          <div className="field full chat-pick">
-            <span>Chat yang pernah menghubungi bot</span>
-            {chats.length === 0 ? <div className="sub">Belum ada. Kirim pesan ke bot dulu, lalu cari lagi.</div> : chats.map((chat) => (
-              <div key={chat.id}>
-                <span className="sub">{chat.name} · {chat.type} · <span className="secret">{chat.id}</span></span>
-                <button className="btn-ghost btn-sm" type="button" disabled={lines(telegram.chatIds).includes(chat.id)} onClick={() => addChat(chat.id)}>
-                  {lines(telegram.chatIds).includes(chat.id) ? 'Sudah dipakai' : 'Tambah'}
-                </button>
+      <form className="pref" onSubmit={(event) => void save(event)}>
+        <PrefSection title="Popup di dashboard" description="Kotak pemberitahuan di layar saat ada alarm">
+          <div className="pref-list">
+            <PrefSwitch title="Tampilkan popup" description="Muncul saat ada alarm baru" checked={popup.enabled} onChange={(next) => setPopup({ ...popup, enabled: next })} />
+            {popup.enabled ? <>
+            <PrefRow title="Kejadian" description="Jenis alarm yang dimunculkan">
+              <EventChecks value={popup.events as EventId[]} onChange={(events) => setPopup({ ...popup, events })} />
+            </PrefRow>
+            <PrefRow title="Lama tampil" description="0 = tampil sampai ditutup" htmlFor="popup-duration">
+              <div className="pref-number">
+                <input id="popup-duration" type="number" min={0} max={600} value={popup.durationSec} onChange={(event) => setPopup({ ...popup, durationSec: Number(event.target.value) })} />
+                <span>detik</span>
               </div>
+            </PrefRow>
+            <PrefRow title="Posisi" htmlFor="popup-position">
+              <select id="popup-position" value={popup.position} onChange={(event) => setPopup({ ...popup, position: event.target.value as PopupConfig['position'] })}>
+                <option value="top-right">Kanan atas</option>
+                <option value="bottom-right">Kanan bawah</option>
+              </select>
+            </PrefRow>
+            </> : null}
+          </div>
+        </PrefSection>
+
+        <PrefSection title="Telegram" description="Kirim pemberitahuan lewat bot Telegram">
+          <div className="pref-list">
+            <PrefSwitch
+              title="Aktifkan Telegram"
+              description={telegram.enabled ? undefined : 'Nyalakan untuk mengatur bot dan chat tujuan'}
+              checked={telegram.enabled}
+              onChange={(next) => setTelegram({ ...telegram, enabled: next })}
+            />
+            {telegram.enabled ? <>
+            <PrefRow
+              stack
+              title={`Token bot${telegram.botTokenSet ? ' · tersimpan' : ''}`}
+              description="Buat bot lewat @BotFather, lalu tempel tokennya di sini"
+              htmlFor="tg-token"
+            >
+              <div className="pref-inline">
+                <input
+                  id="tg-token"
+                  className="secret"
+                  type="password"
+                  autoComplete="new-password"
+                  value={telegram.botToken}
+                  placeholder={telegram.botTokenSet ? 'Kosongkan jika tidak diubah' : '123456789:AA...'}
+                  onChange={(event) => setTelegram({ ...telegram, botToken: event.target.value })}
+                />
+                <button className="btn-ghost" type="button" disabled={busy === 'bot'} onClick={checkBot}>{busy === 'bot' ? 'Memeriksa...' : 'Cek bot'}</button>
+                <button className="btn-ghost" type="button" disabled={busy === 'chats'} onClick={findChats}>{busy === 'chats' ? 'Mencari...' : 'Cari chat ID'}</button>
+              </div>
+              {telegram.botTokenSet || bot ? (
+                <div className="pref-meta">
+                  {telegram.botTokenSet ? (
+                    <label className="chip-check"><input type="checkbox" checked={telegram.clearBotToken} onChange={(event) => setTelegram({ ...telegram, clearBotToken: event.target.checked })} />Hapus token tersimpan</label>
+                  ) : null}
+                  {bot ? <span className="status-ok">Bot: {bot}</span> : null}
+                </div>
+              ) : null}
+            </PrefRow>
+            {chats ? (
+              <PrefRow stack title="Chat yang pernah menghubungi bot">
+                {chats.length === 0 ? <span className="pref-value">Belum ada. Kirim pesan ke bot dulu, lalu cari lagi.</span> : chats.map((chat) => (
+                  <div className="pref-pick" key={chat.id}>
+                    <span>{chat.name} · {chat.type} · <code>{chat.id}</code></span>
+                    <button className="btn-ghost btn-sm" type="button" disabled={usedChats.includes(chat.id)} onClick={() => addChat(chat.id)}>
+                      {usedChats.includes(chat.id) ? 'Sudah dipakai' : 'Tambah'}
+                    </button>
+                  </div>
+                ))}
+              </PrefRow>
+            ) : null}
+            <PrefRow
+              stack
+              title="Chat ID tujuan"
+              description="Satu per baris. Kirim /start ke bot, atau tambahkan bot ke grup dan kirim satu pesan, lalu klik Cari chat ID."
+              htmlFor="tg-chats"
+            >
+              <textarea id="tg-chats" rows={3} className="secret" value={telegram.chatIds} placeholder="-1001234567890" onChange={(event) => setTelegram({ ...telegram, chatIds: event.target.value })} />
+            </PrefRow>
+            <PrefRow title="Kejadian" description="Jenis alarm yang dikirim">
+              <EventChecks value={telegram.events} onChange={(events) => setTelegram({ ...telegram, events })} />
+            </PrefRow>
+            </> : null}
+          </div>
+          {telegram.enabled ? (
+            <PrefActions>
+              <button className="btn-ghost" type="button" disabled={busy === 'telegram'} onClick={() => sendTest('telegram')}>{busy === 'telegram' ? 'Mengirim...' : 'Kirim tes Telegram'}</button>
+            </PrefActions>
+          ) : null}
+        </PrefSection>
+
+        <PrefSection title="WhatsApp" description="Kirim pemberitahuan lewat gateway WhatsApp">
+          <div className="pref-list">
+            <PrefSwitch
+              title="Aktifkan WhatsApp"
+              description={whatsapp.enabled ? undefined : 'Nyalakan untuk mengatur gateway dan nomor tujuan'}
+              checked={whatsapp.enabled}
+              onChange={(next) => setWhatsapp({ ...whatsapp, enabled: next })}
+            />
+            {whatsapp.enabled ? <>
+            <PrefRow title="Gateway" htmlFor="wa-provider">
+              <select id="wa-provider" value={whatsapp.provider} onChange={(event) => changeProvider(event.target.value as Provider)}>
+                {(Object.keys(providerLabels) as Provider[]).map((item) => <option key={item} value={item}>{providerLabels[item]}</option>)}
+              </select>
+            </PrefRow>
+            <PrefRow
+              stack
+              title="URL API"
+              description={
+                whatsapp.provider === 'fonnte' ? 'Hubungkan nomor bot di dashboard fonnte.com dengan scan QR, lalu salin token device.'
+                  : whatsapp.provider === 'wablas' ? 'Isi domain server Wablas Anda dan token device.'
+                    : 'Aplikasi mengirim POST JSON {"target", "message"} ke URL ini, dengan header Authorization berisi token jika diisi.'
+              }
+              htmlFor="wa-url"
+            >
+              <input
+                id="wa-url"
+                value={whatsapp.apiUrl}
+                placeholder={whatsapp.provider === 'wablas' ? 'https://jkt.wablas.com' : whatsapp.provider === 'custom' ? 'https://gateway.anda/send' : ''}
+                onChange={(event) => setWhatsapp({ ...whatsapp, apiUrl: event.target.value })}
+              />
+            </PrefRow>
+            <PrefRow stack title={`Token${whatsapp.tokenSet ? ' · tersimpan' : ''}`} htmlFor="wa-token">
+              <input
+                id="wa-token"
+                className="secret"
+                type="password"
+                autoComplete="new-password"
+                value={whatsapp.token}
+                placeholder={whatsapp.tokenSet ? 'Kosongkan jika tidak diubah' : 'Token dari gateway WhatsApp'}
+                onChange={(event) => setWhatsapp({ ...whatsapp, token: event.target.value })}
+              />
+              {whatsapp.tokenSet ? (
+                <div className="pref-meta">
+                  <label className="chip-check"><input type="checkbox" checked={whatsapp.clearToken} onChange={(event) => setWhatsapp({ ...whatsapp, clearToken: event.target.checked })} />Hapus token tersimpan</label>
+                </div>
+              ) : null}
+            </PrefRow>
+            <PrefRow stack title="Nomor atau ID grup tujuan" description="Satu per baris" htmlFor="wa-targets">
+              <textarea id="wa-targets" rows={3} className="secret" value={whatsapp.targets} placeholder={'081234567890\n120363012345678901@g.us'} onChange={(event) => setWhatsapp({ ...whatsapp, targets: event.target.value })} />
+            </PrefRow>
+            <PrefRow title="Kejadian" description="Jenis alarm yang dikirim">
+              <EventChecks value={whatsapp.events} onChange={(events) => setWhatsapp({ ...whatsapp, events })} />
+            </PrefRow>
+            </> : null}
+          </div>
+          {whatsapp.enabled ? (
+            <PrefActions>
+              <button className="btn-ghost" type="button" disabled={busy === 'whatsapp'} onClick={() => sendTest('whatsapp')}>{busy === 'whatsapp' ? 'Mengirim...' : 'Kirim tes WhatsApp'}</button>
+            </PrefActions>
+          ) : null}
+        </PrefSection>
+
+        <PrefSection title="Template pesan" description="Dipakai untuk Telegram dan WhatsApp">
+          <p className="pref-hint">
+            Kata dalam kurung kurawal diganti otomatis:{' '}
+            {placeholders.split(' ').map((item) => <code key={item}>{item}</code>)}
+          </p>
+          <div className="pref-list">
+            {(Object.keys(eventLabels) as EventId[]).map((key) => (
+              <PrefRow
+                stack
+                key={key}
+                title={eventLabels[key]}
+                htmlFor={`tpl-${key}`}
+                aside={<button className="btn-ghost btn-sm" type="button" onClick={() => setTemplates({ ...templates, [key]: defaults.templates[key] })}>Bawaan</button>}
+              >
+                <textarea id={`tpl-${key}`} rows={5} value={templates[key]} onChange={(event) => setTemplates({ ...templates, [key]: event.target.value })} />
+              </PrefRow>
             ))}
           </div>
-        ) : null}
-        <label className="field full">
-          <span>Chat ID tujuan (satu per baris)</span>
-          <textarea rows={3} className="secret" value={telegram.chatIds} placeholder="-1001234567890" onChange={(event) => setTelegram({ ...telegram, chatIds: event.target.value })} />
-        </label>
-        <EventChecks value={telegram.events} onChange={(events) => setTelegram({ ...telegram, events })} />
-        <div className="toolbar">
-          <button className="btn-ghost" type="button" disabled={busy === 'telegram'} onClick={() => sendTest('telegram')}>{busy === 'telegram' ? 'Mengirim...' : 'Kirim tes Telegram'}</button>
-        </div>
-
-        <h3>WhatsApp</h3>
-        <label className="field check full">
-          <input type="checkbox" checked={whatsapp.enabled} onChange={(event) => setWhatsapp({ ...whatsapp, enabled: event.target.checked })} />
-          Kirim pemberitahuan ke WhatsApp
-        </label>
-        <label className="field">
-          <span>Gateway / bot WhatsApp</span>
-          <select value={whatsapp.provider} onChange={(event) => changeProvider(event.target.value as Provider)}>
-            {(Object.keys(providerLabels) as Provider[]).map((item) => <option key={item} value={item}>{providerLabels[item]}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>URL API</span>
-          <input
-            value={whatsapp.apiUrl}
-            placeholder={whatsapp.provider === 'wablas' ? 'https://jkt.wablas.com' : whatsapp.provider === 'custom' ? 'https://gateway.anda/send' : ''}
-            onChange={(event) => setWhatsapp({ ...whatsapp, apiUrl: event.target.value })}
-          />
-        </label>
-        <label className="field full">
-          <span>Token {whatsapp.tokenSet ? '(tersimpan)' : ''}</span>
-          <input
-            className="secret"
-            type="password"
-            autoComplete="new-password"
-            value={whatsapp.token}
-            placeholder={whatsapp.tokenSet ? 'Kosongkan jika tidak diubah' : 'Token dari gateway WhatsApp'}
-            onChange={(event) => setWhatsapp({ ...whatsapp, token: event.target.value })}
-          />
-        </label>
-        {whatsapp.tokenSet ? (
-          <label className="check full"><input type="checkbox" checked={whatsapp.clearToken} onChange={(event) => setWhatsapp({ ...whatsapp, clearToken: event.target.checked })} /> Hapus token tersimpan</label>
-        ) : null}
-        <div className="full sub">
-          {whatsapp.provider === 'fonnte' ? 'Hubungkan nomor bot di dashboard fonnte.com dengan scan QR, lalu salin token device ke sini.' : null}
-          {whatsapp.provider === 'wablas' ? 'Isi domain server Wablas Anda (misalnya https://jkt.wablas.com) dan token device.' : null}
-          {whatsapp.provider === 'custom' ? 'Aplikasi mengirim POST JSON {"target": "...", "message": "..."} ke URL ini, dengan header Authorization berisi token jika diisi.' : null}
-        </div>
-        <label className="field full">
-          <span>Nomor atau ID grup tujuan (satu per baris)</span>
-          <textarea rows={3} className="secret" value={whatsapp.targets} placeholder={'081234567890\n120363012345678901@g.us'} onChange={(event) => setWhatsapp({ ...whatsapp, targets: event.target.value })} />
-        </label>
-        <EventChecks value={whatsapp.events} onChange={(events) => setWhatsapp({ ...whatsapp, events })} />
-        <div className="toolbar">
-          <button className="btn-ghost" type="button" disabled={busy === 'whatsapp'} onClick={() => sendTest('whatsapp')}>{busy === 'whatsapp' ? 'Mengirim...' : 'Kirim tes WhatsApp'}</button>
-        </div>
-
-        <h3>Template pesan Telegram dan WhatsApp</h3>
-        <div className="full sub">Kata dalam kurung kurawal diganti otomatis: {placeholders}</div>
-        {(Object.keys(eventLabels) as EventId[]).map((key) => (
-          <label className="field full" key={key}>
-            <span>
-              {eventLabels[key]}{' '}
-              <button className="btn-ghost btn-sm" type="button" onClick={() => setTemplates({ ...templates, [key]: defaults.templates[key] })}>Bawaan</button>
-            </span>
-            <textarea rows={6} value={templates[key]} onChange={(event) => setTemplates({ ...templates, [key]: event.target.value })} />
-          </label>
-        ))}
-        <div className="full sub">
-          Pesan dikirim setelah alarm bertahan selama Alert delay perangkat. Perangkat dengan Notifikasi aktif dimatikan atau dalam maintenance tidak dikirimi pesan.
-          Pesan pulih hanya dikirim bila pesan DOWN atau WARNING-nya sudah terkirim.
-        </div>
-        <div className="toolbar">
-          <button className="btn" type="submit">Simpan notifikasi</button>
-        </div>
-        {error ? <div className="error">{error}</div> : null}
-        {message ? <div className="sub">{message}</div> : null}
+          <p className="pref-hint">
+            Pesan dikirim setelah alarm bertahan selama Alert delay perangkat. Perangkat dengan notifikasi dimatikan atau dalam maintenance tidak dikirimi pesan.
+            Pesan pulih hanya dikirim bila pesan DOWN atau WARNING-nya sudah terkirim.
+          </p>
+        </PrefSection>
+        <PrefActions><button className="btn" type="submit">Simpan notifikasi</button></PrefActions>
+        <PrefFlash message={message} error={error} />
       </form>
-      <div className="form-grid">
-        <h3>Riwayat pengiriman</h3>
-        <div className="toolbar"><button className="btn-ghost btn-sm" type="button" onClick={loadLogs}>Muat ulang</button></div>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Waktu</th><th>Kanal</th><th>Tujuan</th><th>Kejadian</th><th>Status</th><th>Keterangan</th></tr></thead>
-          <tbody>
-            {logs.length === 0 ? <tr><td colSpan={6}>Belum ada pengiriman</td></tr> : logs.map((row) => (
-              <tr key={row.id}>
-                <td>{new Date(row.sentAt).toLocaleString('id-ID')}</td>
-                <td>{row.channel === 'telegram' ? 'Telegram' : 'WhatsApp'}</td>
-                <td className="secret">{row.target ?? '—'}</td>
-                <td>{logEventLabels[row.event] ?? row.event}</td>
-                <td className={row.status === 'sent' ? 'status-ok' : 'status-bad'}>{row.status === 'sent' ? 'Terkirim' : 'Gagal'}</td>
-                <td>{row.error ?? row.alarmTitle ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="pref wide">
+        <PrefSection
+          title="Riwayat pengiriman"
+          description="Pesan Telegram dan WhatsApp terakhir"
+          action={<button className="btn-ghost btn-sm" type="button" onClick={loadLogs}>Muat ulang</button>}
+        >
+          {logs.length === 0 ? <p className="pref-empty pref-pad">Belum ada pengiriman</p> : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Waktu</th><th>Kanal</th><th>Tujuan</th><th>Kejadian</th><th>Status</th><th>Keterangan</th></tr></thead>
+              <tbody>
+                {logs.map((row) => (
+                  <tr key={row.id}>
+                    <td>{new Date(row.sentAt).toLocaleString('id-ID')}</td>
+                    <td>{row.channel === 'telegram' ? 'Telegram' : 'WhatsApp'}</td>
+                    <td className="secret">{row.target ?? '—'}</td>
+                    <td>{logEventLabels[row.event] ?? row.event}</td>
+                    <td><span className={row.status === 'sent' ? 'badge up' : 'badge down'}>{row.status === 'sent' ? 'Terkirim' : 'Gagal'}</span></td>
+                    <td>{row.error ?? row.alarmTitle ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          )}
+        </PrefSection>
       </div>
     </>
   );
@@ -379,20 +439,17 @@ export function NotificationTab() {
 
 function EventChecks({ value, onChange }: { value: EventId[]; onChange: (next: EventId[]) => void }) {
   return (
-    <div className="field full">
-      <span>Kirim untuk kejadian</span>
-      <div className="notify-events">
-        {(Object.keys(eventLabels) as EventId[]).map((key) => (
-          <label className="check" key={key}>
-            <input
-              type="checkbox"
-              checked={value.includes(key)}
-              onChange={(event) => onChange(event.target.checked ? [...value, key] : value.filter((item) => item !== key))}
-            />
-            {eventLabels[key]}
-          </label>
-        ))}
-      </div>
+    <div className="chip-checks">
+      {(Object.keys(eventLabels) as EventId[]).map((key) => (
+        <label className="chip-check" key={key}>
+          <input
+            type="checkbox"
+            checked={value.includes(key)}
+            onChange={(event) => onChange(event.target.checked ? [...value, key] : value.filter((item) => item !== key))}
+          />
+          {eventLabels[key]}
+        </label>
+      ))}
     </div>
   );
 }

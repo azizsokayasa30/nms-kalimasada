@@ -222,7 +222,7 @@ export function DevicesPage() {
                         onClick={() => setCollapsed((current) => ({ ...current, [key]: open }))}
                       >
                         <span>{open ? '▾' : '▸'}</span>
-                        {section.name}
+                        <span className="group-name">{section.name}</span>
                         <span className="group-count">{section.devices.length}</span>
                       </button>
                     </td>
@@ -235,7 +235,7 @@ export function DevicesPage() {
                     return (
                       <tr key={device.id} className="device-row">
                         <td className="cell-name"><Link to={`/devices/${device.id}`}>{device.name}</Link></td>
-                        <td data-label="IP">{device.ipAddress}</td>
+                        <td data-label="IP"><span className="device-ip">{device.ipAddress}</span></td>
                         <td data-label="Tipe">{deviceTypeLabels[device.deviceType] ?? device.deviceType}</td>
                         <td data-label="Lokasi">{device.location ?? '—'}</td>
                         <td data-label="Mode">

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -15,6 +15,7 @@ import {
 } from '../lib/display';
 import { can, roleLabels } from '../lib/format';
 import { playRecovery } from '../components/AlarmSound';
+import { PrefActions, PrefFlash, PrefRow, PrefSection, PrefSwitch } from '../components/Pref';
 import { NotificationTab } from './NotificationSettings';
 import { NetworkTab } from './network/NetworkTab';
 
@@ -44,13 +45,13 @@ type UserRow = { id: string; name: string; email: string; role: string };
 type ApiToken = { id: string; name: string; role: string; prefix: string; createdAt: string; lastUsedAt: string | null };
 
 const tabs = [
-  { id: 'tampilan', label: 'Tampilan' },
-  { id: 'mrtg', label: 'MRTG' },
-  { id: 'pengguna', label: 'Pengguna' },
-  { id: 'akses', label: 'Akses API' },
-  { id: 'suara', label: 'Suara' },
-  { id: 'notifikasi', label: 'Notifikasi' },
-  { id: 'jaringan', label: 'Jaringan', role: 'admin' },
+  { id: 'tampilan', label: 'Tampilan', icon: <DisplayIcon /> },
+  { id: 'mrtg', label: 'MRTG', icon: <GraphIcon /> },
+  { id: 'pengguna', label: 'Pengguna', icon: <UsersIcon /> },
+  { id: 'akses', label: 'Akses API', icon: <KeyIcon /> },
+  { id: 'suara', label: 'Suara', icon: <VolumeIcon /> },
+  { id: 'notifikasi', label: 'Notifikasi', icon: <SendIcon /> },
+  { id: 'jaringan', label: 'Jaringan', icon: <GlobeIcon />, role: 'admin' },
 ] as const;
 
 type TabId = (typeof tabs)[number]['id'];
@@ -73,6 +74,7 @@ export function SettingsPage() {
             className={item.id === tab ? 'active' : ''}
             onClick={() => setParams({ tab: item.id })}
           >
+            {item.icon}
             {item.label}
           </button>
         ))}
@@ -88,17 +90,22 @@ export function SettingsPage() {
   );
 }
 
+const themeOptions = [
+  { value: 'light', label: 'Terang', icon: <SunIcon /> },
+  { value: 'dark', label: 'Gelap', icon: <MoonIcon /> },
+  { value: 'system', label: 'Sistem', icon: <DisplayIcon /> },
+] as const;
+
 function DisplayTab() {
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
-  const [refreshSeconds, setRefreshSeconds] = useState(readRefreshSeconds);
+  const [refreshSeconds, setRefreshSeconds] = useState(() => String(readRefreshSeconds()));
   const [animations, setAnimations] = useState(readAnimations);
   const [compact, setCompact] = useState(readCompact);
-  const [message, setMessage] = useState('');
 
   useEffect(() => {
     const sync = () => {
       setTheme(readTheme());
-      setRefreshSeconds(readRefreshSeconds());
+      setRefreshSeconds(String(readRefreshSeconds()));
       setAnimations(readAnimations());
       setCompact(readCompact());
     };
@@ -106,38 +113,62 @@ function DisplayTab() {
     return () => window.removeEventListener(DISPLAY_EVENT, sync);
   }, []);
 
-  function save(event: FormEvent) {
-    event.preventDefault();
-    saveDisplay({ theme, refreshSeconds: Number(refreshSeconds), animations, compact });
-    setMessage('Tampilan disimpan di browser ini');
+  function commitRefresh() {
+    const seconds = Math.min(120, Math.max(5, Math.round(Number(refreshSeconds) || 15)));
+    setRefreshSeconds(String(seconds));
+    saveDisplay({ refreshSeconds: seconds });
   }
 
   return (
-    <form className="form-grid" onSubmit={save}>
-      <div className="field full">
-        <span>Tema</span>
-        <div className="segment">
-          {([['light', 'Terang'], ['dark', 'Gelap'], ['system', 'Ikuti sistem']] as const).map(([value, label]) => (
-            <button key={value} className={theme === value ? 'on' : ''} type="button" onClick={() => { setTheme(value); saveDisplay({ theme: value, refreshSeconds, animations, compact }); }}>{label}</button>
-          ))}
-        </div>
+    <div className="pref">
+      <div className="pref-list">
+        <PrefRow title="Tema" description="Warna tampilan dashboard">
+          <div className="pref-segment" role="radiogroup" aria-label="Tema">
+            {themeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={theme === option.value}
+                className={theme === option.value ? 'on' : ''}
+                onClick={() => { setTheme(option.value); saveDisplay({ theme: option.value }); }}
+              >
+                {option.icon}
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </PrefRow>
+        <PrefRow title="Penyegaran data" description="Interval muat ulang otomatis, 5–120 detik" htmlFor="pref-refresh">
+          <div className="pref-number">
+            <input
+              id="pref-refresh"
+              type="number"
+              min={5}
+              max={120}
+              value={refreshSeconds}
+              onChange={(event) => setRefreshSeconds(event.target.value)}
+              onBlur={commitRefresh}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            />
+            <span>detik</span>
+          </div>
+        </PrefRow>
+        <PrefSwitch
+          title="Animasi alarm"
+          description="Kedipan pada status dan alarm yang DOWN"
+          checked={animations}
+          onChange={(next) => { setAnimations(next); saveDisplay({ animations: next }); }}
+        />
+        <PrefSwitch
+          title="Tampilan rapat"
+          description="Baris tabel dan kartu lebih padat"
+          checked={compact}
+          onChange={(next) => { setCompact(next); saveDisplay({ compact: next }); }}
+        />
       </div>
-      <label className="field">
-        <span>Penyegaran data (detik)</span>
-        <input type="number" min={5} max={120} value={refreshSeconds} onChange={(event) => setRefreshSeconds(Number(event.target.value))} />
-      </label>
-      <label className="field check">
-        <input type="checkbox" checked={animations} onChange={(event) => { const next = event.target.checked; setAnimations(next); saveDisplay({ theme, refreshSeconds, animations: next, compact }); }} />
-        Animasi alarm
-      </label>
-      <label className="field check">
-        <input type="checkbox" checked={compact} onChange={(event) => { const next = event.target.checked; setCompact(next); saveDisplay({ theme, refreshSeconds, animations, compact: next }); }} />
-        Tabel dan kartu lebih rapat
-      </label>
-      <div className="full sub">Pengaturan ini berlaku di browser ini. Tombol tema di atas tetap bisa mengganti terang atau gelap dengan cepat.</div>
-      <button className="btn" type="submit">Simpan tampilan</button>
-      {message ? <div className="full sub">{message}</div> : null}
-    </form>
+      <p className="pref-note">Tersimpan otomatis di browser ini.</p>
+    </div>
   );
 }
 
@@ -149,6 +180,7 @@ function UsersTab() {
   const [draft, setDraft] = useState({ id: '', name: '', email: '', password: '', role: 'noc' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const formRef = useRef<HTMLFormElement>(null);
 
   function loadUsers() {
     if (!superAdmin) return;
@@ -232,66 +264,77 @@ function UsersTab() {
     }
   }
 
+  function edit(row: UserRow) {
+    setDraft({ id: row.id, name: row.name, email: row.email, password: '', role: row.role });
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   return (
-    <>
+    <div className="pref">
       {!superAdmin ? (
-        <form className="form-grid" onSubmit={(event) => void saveMe(event)}>
-          <h3 className="full" style={{ margin: 0 }}>Akun saya</h3>
-          <label className="field"><span>Nama</span><input value={me.name} onChange={(event) => setMe({ ...me, name: event.target.value })} required /></label>
-          <label className="field"><span>Email</span><input type="email" value={me.email} onChange={(event) => setMe({ ...me, email: event.target.value })} required /></label>
-          <label className="field"><span>Password saat ini</span><input type="password" autoComplete="current-password" value={me.currentPassword} onChange={(event) => setMe({ ...me, currentPassword: event.target.value })} /></label>
-          <label className="field"><span>Password baru</span><input type="password" autoComplete="new-password" value={me.newPassword} onChange={(event) => setMe({ ...me, newPassword: event.target.value })} /></label>
-          <button className="btn" type="submit">Simpan akun</button>
-        </form>
-      ) : null}
-      {superAdmin ? (
-        <>
-          <form className="form-grid" onSubmit={(event) => void saveUser(event)}>
-            <h3 className="full" style={{ margin: 0 }}>{draft.id ? 'Ubah pengguna' : 'Tambah pengguna'}</h3>
-            <label className="field"><span>Nama</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required /></label>
-            <label className="field"><span>Email</span><input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} required /></label>
-            <label className="field">
-              <span>{draft.id ? 'Password baru (kosongkan jika tetap)' : 'Password'}</span>
-              <input type="password" autoComplete="new-password" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} required={!draft.id} />
-            </label>
-            <label className="field"><span>Role</span>
-              <select value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value })}>
-                <option value="super_admin">Super Admin</option>
-                <option value="admin">Admin</option>
-                <option value="noc">NOC</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </label>
-            <div className="toolbar">
-              <button className="btn" type="submit">{draft.id ? 'Simpan perubahan' : 'Tambah'}</button>
-              {draft.id ? <button className="btn-ghost" type="button" onClick={() => setDraft({ id: '', name: '', email: '', password: '', role: 'noc' })}>Batal</button> : null}
+        <form onSubmit={(event) => void saveMe(event)}>
+          <PrefSection title="Akun saya" description="Ubah nama, email, atau password Anda">
+            <div className="pref-fields">
+              <label className="field"><span>Nama</span><input value={me.name} onChange={(event) => setMe({ ...me, name: event.target.value })} required /></label>
+              <label className="field"><span>Email</span><input type="email" value={me.email} onChange={(event) => setMe({ ...me, email: event.target.value })} required /></label>
+              <label className="field"><span>Password saat ini</span><input type="password" autoComplete="current-password" value={me.currentPassword} onChange={(event) => setMe({ ...me, currentPassword: event.target.value })} /></label>
+              <label className="field"><span>Password baru</span><input type="password" autoComplete="new-password" placeholder="Minimal 8 karakter" value={me.newPassword} onChange={(event) => setMe({ ...me, newPassword: event.target.value })} /></label>
             </div>
+            <PrefActions><button className="btn" type="submit">Simpan akun</button></PrefActions>
+          </PrefSection>
+          <p className="pref-note">Daftar pengguna hanya dapat dikelola Super Admin.</p>
+        </form>
+      ) : (
+        <>
+          <PrefSection title="Daftar pengguna" description={`${rows.length} pengguna terdaftar`}>
+            <div className="pref-list">
+              {rows.map((row) => (
+                <div className="pref-item" key={row.id}>
+                  <span className="pref-avatar" aria-hidden="true">{initials(row.name)}</span>
+                  <div className="pref-item-main">
+                    <strong>{row.name}{row.id === user?.id ? <em> · Anda</em> : null}</strong>
+                    <span>{row.email}</span>
+                  </div>
+                  <span className="badge role">{roleLabels[row.role] ?? row.role}</span>
+                  <div className="pref-item-actions">
+                    <button className="btn-ghost btn-sm" type="button" onClick={() => edit(row)}>Ubah</button>
+                    {row.id !== user?.id ? <button className="btn-danger btn-sm" type="button" onClick={() => void removeUser(row)}>Hapus</button> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </PrefSection>
+          <form ref={formRef} onSubmit={(event) => void saveUser(event)}>
+            <PrefSection
+              title={draft.id ? 'Ubah pengguna' : 'Tambah pengguna'}
+              description={draft.id ? 'Kosongkan password jika tidak diganti' : 'Buat akun baru untuk tim'}
+            >
+              <div className="pref-fields">
+                <label className="field"><span>Nama</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required /></label>
+                <label className="field"><span>Email</span><input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} required /></label>
+                <label className="field">
+                  <span>{draft.id ? 'Password baru' : 'Password'}</span>
+                  <input type="password" autoComplete="new-password" placeholder="Minimal 8 karakter" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} required={!draft.id} />
+                </label>
+                <label className="field"><span>Role</span>
+                  <select value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value })}>
+                    <option value="super_admin">Super Admin</option>
+                    <option value="admin">Admin</option>
+                    <option value="noc">NOC</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                </label>
+              </div>
+              <PrefActions>
+                {draft.id ? <button className="btn-ghost" type="button" onClick={() => setDraft({ id: '', name: '', email: '', password: '', role: 'noc' })}>Batal</button> : null}
+                <button className="btn" type="submit">{draft.id ? 'Simpan perubahan' : 'Tambah pengguna'}</button>
+              </PrefActions>
+            </PrefSection>
           </form>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th></th></tr></thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.name}</td>
-                    <td>{row.email}</td>
-                    <td>{roleLabels[row.role] ?? row.role}</td>
-                    <td>
-                      <div className="toolbar">
-                        <button className="btn-ghost" type="button" onClick={() => setDraft({ id: row.id, name: row.name, email: row.email, password: '', role: row.role })}>Ubah</button>
-                        {row.id !== user?.id ? <button className="btn-danger" type="button" onClick={() => void removeUser(row)}>Hapus</button> : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </>
-      ) : <div className="sub" style={{ padding: '0 16px 16px' }}>Daftar pengguna hanya dapat dikelola Super Admin.</div>}
-      {error ? <div className="error">{error}</div> : null}
-      {message ? <div className="sub" style={{ padding: '0 16px 16px' }}>{message}</div> : null}
-    </>
+      )}
+      <PrefFlash message={message} error={error} />
+    </div>
   );
 }
 
@@ -430,113 +473,134 @@ function ApiTab() {
   const localWebhook = `${window.location.origin}/api/internal/zabbix/webhook`;
 
   return (
-    <>
-      <form className="form-grid" onSubmit={(event) => void save(event)}>
-        <h3 className="full" style={{ margin: 0 }}>Zabbix</h3>
-        <label className="field full">
-          <span>URL API</span>
-          <input value={form.zabbixApiUrl} disabled={!admin} onChange={(event) => setForm({ ...form, zabbixApiUrl: event.target.value })} />
-        </label>
-        <label className="field">
-          <span>Username</span>
-          <input value={form.zabbixUser} disabled={!admin} autoComplete="off" onChange={(event) => setForm({ ...form, zabbixUser: event.target.value })} />
-        </label>
-        <label className="field">
-          <span>Password {settings?.zabbixPasswordSet ? '(tersimpan)' : ''}</span>
-          <input type="password" autoComplete="new-password" value={form.zabbixPassword} disabled={!admin} placeholder="Kosongkan jika tidak diubah" onChange={(event) => setForm({ ...form, zabbixPassword: event.target.value })} />
-        </label>
-        <label className="field full">
-          <span>API token {settings?.zabbixTokenSet ? '(tersimpan, dipakai lebih dulu daripada password)' : ''}</span>
-          <input className="secret" type="password" autoComplete="new-password" value={form.zabbixApiToken} disabled={!admin} placeholder="Kosongkan jika tidak diubah" onChange={(event) => setForm({ ...form, zabbixApiToken: event.target.value })} />
-        </label>
-        {admin ? (
-          <div className="toolbar full">
-            <label className="check"><input type="checkbox" checked={form.clearZabbixPassword} onChange={(event) => setForm({ ...form, clearZabbixPassword: event.target.checked })} /> Hapus password tersimpan</label>
-            <label className="check"><input type="checkbox" checked={form.clearZabbixToken} onChange={(event) => setForm({ ...form, clearZabbixToken: event.target.checked })} /> Hapus API token tersimpan</label>
-          </div>
-        ) : null}
-        <h3 className="full" style={{ margin: 0 }}>Webhook masuk</h3>
-        <label className="field full">
-          <span>URL yang dipanggil Zabbix</span>
-          <input value={form.webhookUrl} disabled={!admin} placeholder={localWebhook} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} />
-        </label>
-        <div className="field full">
-          <span>Endpoint aplikasi</span>
-          <div className="toolbar">
-            <input className="secret" readOnly value={localWebhook} />
-            <button className="btn-ghost" type="button" onClick={() => void copyText(localWebhook, setMessage)}>Salin</button>
-            {admin ? <button className="btn-ghost" type="button" onClick={() => setForm({ ...form, webhookUrl: localWebhook })}>Pakai alamat ini</button> : null}
-          </div>
-          <div className="sub">Header: X-Webhook-Token</div>
+    <div className="pref">
+      <PrefSection title="Status layanan" description="Kondisi koneksi backend saat ini">
+        <div className="pref-stats">
+          <StatusTile label="API" value={health?.api} />
+          <StatusTile label="Database" value={health?.database} />
+          <StatusTile label="Zabbix" value={health?.zabbix} extra={health?.zabbixVersion} />
+          <StatusTile label="Redis" value={health?.redis} />
         </div>
-        <div className="field full">
-          <span>Token webhook {settings?.webhookTokenSet ? '' : '(belum ada)'}</span>
-          <div className="toolbar">
-            <input className="secret" readOnly value={admin ? webhookToken : (settings?.webhookTokenSet ? '••••' : '')} />
-            {admin && webhookToken ? <button className="btn-ghost" type="button" onClick={() => void copyText(webhookToken, setMessage)}>Salin</button> : null}
-            {admin ? <button className="btn-ghost" type="button" onClick={() => void regenerate()}>Buat ulang</button> : null}
+        {health?.zabbixError ? <p className="pref-hint bad">{health.zabbixError}</p> : null}
+      </PrefSection>
+      <form onSubmit={(event) => void save(event)}>
+        <PrefSection title="Koneksi Zabbix" description="Dipakai NMS untuk membaca status dan mengelola host">
+          <div className="pref-fields">
+            <label className="field full">
+              <span>URL API</span>
+              <input value={form.zabbixApiUrl} disabled={!admin} onChange={(event) => setForm({ ...form, zabbixApiUrl: event.target.value })} />
+            </label>
+            <label className="field">
+              <span>Username</span>
+              <input value={form.zabbixUser} disabled={!admin} autoComplete="off" onChange={(event) => setForm({ ...form, zabbixUser: event.target.value })} />
+            </label>
+            <label className="field">
+              <span>Password{settings?.zabbixPasswordSet ? ' · tersimpan' : ''}</span>
+              <input type="password" autoComplete="new-password" value={form.zabbixPassword} disabled={!admin} placeholder="Kosongkan jika tidak diubah" onChange={(event) => setForm({ ...form, zabbixPassword: event.target.value })} />
+            </label>
+            <label className="field full">
+              <span>API token{settings?.zabbixTokenSet ? ' · tersimpan, dipakai lebih dulu daripada password' : ''}</span>
+              <input className="secret" type="password" autoComplete="new-password" value={form.zabbixApiToken} disabled={!admin} placeholder="Kosongkan jika tidak diubah" onChange={(event) => setForm({ ...form, zabbixApiToken: event.target.value })} />
+            </label>
+            {admin && (settings?.zabbixPasswordSet || settings?.zabbixTokenSet) ? (
+              <div className="full chip-checks">
+                {settings?.zabbixPasswordSet ? (
+                  <label className="chip-check"><input type="checkbox" checked={form.clearZabbixPassword} onChange={(event) => setForm({ ...form, clearZabbixPassword: event.target.checked })} />Hapus password tersimpan</label>
+                ) : null}
+                {settings?.zabbixTokenSet ? (
+                  <label className="chip-check"><input type="checkbox" checked={form.clearZabbixToken} onChange={(event) => setForm({ ...form, clearZabbixToken: event.target.checked })} />Hapus API token tersimpan</label>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-        </div>
-        {admin ? (
-          <div className="toolbar">
-            <button className="btn" type="submit">Simpan akses API</button>
-            <button className="btn-ghost" type="button" onClick={() => void testConnection()}>Uji koneksi Zabbix</button>
+        </PrefSection>
+        <PrefSection title="Webhook masuk" description="Alamat yang dipanggil Zabbix untuk mengirim alarm ke NMS">
+          <div className="pref-fields">
+            <label className="field full">
+              <span>URL yang dipanggil Zabbix</span>
+              <input value={form.webhookUrl} disabled={!admin} placeholder={localWebhook} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} />
+            </label>
+            <div className="field full">
+              <span>Endpoint aplikasi</span>
+              <div className="pref-inline">
+                <input className="secret" readOnly value={localWebhook} />
+                <button className="btn-ghost" type="button" onClick={() => void copyText(localWebhook, setMessage)}>Salin</button>
+                {admin ? <button className="btn-ghost" type="button" onClick={() => setForm({ ...form, webhookUrl: localWebhook })}>Pakai</button> : null}
+              </div>
+            </div>
+            <div className="field full">
+              <span>Token webhook{settings?.webhookTokenSet ? '' : ' · belum ada'} · dikirim di header X-Webhook-Token</span>
+              <div className="pref-inline">
+                <input className="secret" readOnly value={admin ? webhookToken : (settings?.webhookTokenSet ? '••••' : '')} />
+                {admin && webhookToken ? <button className="btn-ghost" type="button" onClick={() => void copyText(webhookToken, setMessage)}>Salin</button> : null}
+                {admin ? <button className="btn-ghost" type="button" onClick={() => void regenerate()}>Buat ulang</button> : null}
+              </div>
+            </div>
           </div>
-        ) : <div className="full sub">Hanya admin yang dapat mengubah koneksi API.</div>}
+          {admin ? (
+            <PrefActions>
+              <button className="btn-ghost" type="button" onClick={() => void testConnection()}>Uji koneksi Zabbix</button>
+              <button className="btn" type="submit">Simpan akses API</button>
+            </PrefActions>
+          ) : <p className="pref-note">Hanya admin yang dapat mengubah koneksi API.</p>}
+        </PrefSection>
       </form>
-      <div className="statrow">
-        <div><span>API</span><strong>{labelStatus(health?.api)}</strong></div>
-        <div><span>Database</span><strong>{labelStatus(health?.database)}</strong></div>
-        <div><span>Zabbix</span><strong>{health ? `${labelStatus(health.zabbix)}${health.zabbixVersion ? ` ${health.zabbixVersion}` : ''}` : '—'}</strong></div>
-        <div><span>Redis</span><strong>{labelStatus(health?.redis)}</strong></div>
-      </div>
-      {health?.zabbixError ? <div className="error">{health.zabbixError}</div> : null}
-      <div className="sub" style={{ padding: '0 16px 8px' }}>Base URL aplikasi: {window.location.origin}/api. Kirim header Authorization: Bearer dan token di bawah, atau token login.</div>
-      {admin ? (
-        <form className="form-grid" onSubmit={(event) => void createToken(event)}>
-          <h3 className="full" style={{ margin: 0 }}>Token API aplikasi</h3>
-          <label className="field"><span>Nama</span><input value={tokenForm.name} onChange={(event) => setTokenForm({ ...tokenForm, name: event.target.value })} required /></label>
-          <label className="field"><span>Role</span>
-            <select value={tokenForm.role} onChange={(event) => setTokenForm({ ...tokenForm, role: event.target.value })}>
-              {can(user?.role, 'super_admin') ? <option value="super_admin">Super Admin</option> : null}
-              <option value="admin">Admin</option>
-              <option value="noc">NOC</option>
-              <option value="viewer">Viewer</option>
-            </select>
-          </label>
-          <button className="btn" type="submit">Buat token</button>
-        </form>
-      ) : null}
-      {freshToken ? (
-        <div className="token-once">
-          <div>Token baru</div>
-          <div className="toolbar" style={{ marginTop: 8 }}>
-            <input className="secret" readOnly value={freshToken} />
-            <button className="btn-ghost" type="button" onClick={() => void copyText(freshToken, setMessage)}>Salin</button>
-          </div>
-        </div>
-      ) : null}
-      {admin ? (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Nama</th><th>Role</th><th>Prefix</th><th>Terakhir dipakai</th><th></th></tr></thead>
-            <tbody>
-              {tokens.length === 0 ? <tr><td colSpan={5}>Belum ada token</td></tr> : tokens.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.name}</td>
-                  <td>{roleLabels[row.role] ?? row.role}</td>
-                  <td className="secret">{row.prefix}…</td>
-                  <td>{row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleString('id-ID') : 'Belum'}</td>
-                  <td><button className="btn-danger" type="button" onClick={() => void revoke(row)}>Cabut</button></td>
-                </tr>
+      <PrefSection
+        title="Token API aplikasi"
+        description={<>Untuk sistem lain. Base URL <code>{window.location.origin}/api</code>, kirim header <code>Authorization: Bearer &lt;token&gt;</code>.</>}
+      >
+        {admin ? (
+          <>
+            <form className="pref-inline pref-pad" onSubmit={(event) => void createToken(event)}>
+              <input aria-label="Nama token" placeholder="Nama token, misalnya Grafana" value={tokenForm.name} onChange={(event) => setTokenForm({ ...tokenForm, name: event.target.value })} required />
+              <select aria-label="Role token" value={tokenForm.role} onChange={(event) => setTokenForm({ ...tokenForm, role: event.target.value })}>
+                {can(user?.role, 'super_admin') ? <option value="super_admin">Super Admin</option> : null}
+                <option value="admin">Admin</option>
+                <option value="noc">NOC</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button className="btn" type="submit">Buat token</button>
+            </form>
+            {freshToken ? (
+              <div className="token-once">
+                <div>Token baru, salin sekarang karena tidak ditampilkan lagi</div>
+                <div className="pref-inline" style={{ marginTop: 8 }}>
+                  <input className="secret" readOnly value={freshToken} />
+                  <button className="btn-ghost" type="button" onClick={() => void copyText(freshToken, setMessage)}>Salin</button>
+                </div>
+              </div>
+            ) : null}
+            <div className="pref-list">
+              {tokens.length === 0 ? <p className="pref-empty">Belum ada token</p> : tokens.map((row) => (
+                <div className="pref-item" key={row.id}>
+                  <span className="pref-avatar" aria-hidden="true"><KeyIcon /></span>
+                  <div className="pref-item-main">
+                    <strong>{row.name}</strong>
+                    <span><code>{row.prefix}…</code> · {row.lastUsedAt ? `Terakhir dipakai ${new Date(row.lastUsedAt).toLocaleString('id-ID')}` : 'Belum pernah dipakai'}</span>
+                  </div>
+                  <span className="badge role">{roleLabels[row.role] ?? row.role}</span>
+                  <div className="pref-item-actions">
+                    <button className="btn-danger btn-sm" type="button" onClick={() => void revoke(row)}>Cabut</button>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-      {error ? <div className="error">{error}</div> : null}
-      {message ? <div className="sub" style={{ padding: '0 16px 16px' }}>{message}</div> : null}
-    </>
+            </div>
+          </>
+        ) : <p className="pref-note">Hanya admin yang dapat membuat token.</p>}
+      </PrefSection>
+      <PrefFlash message={message} error={error} />
+    </div>
+  );
+}
+
+function StatusTile({ label, value, extra }: { label: string; value?: string; extra?: string | null }) {
+  const tone = value === 'up' ? 'up' : value === 'down' ? 'down' : 'unknown';
+  return (
+    <div className={`pref-stat ${tone}`}>
+      <span>{label}</span>
+      <strong><i aria-hidden="true" />{labelStatus(value)}</strong>
+      {extra ? <small>Versi {extra}</small> : null}
+    </div>
   );
 }
 
@@ -684,79 +748,119 @@ function SoundTab() {
   }
 
   return (
-    <form className="form-grid" onSubmit={(event) => void submit(event)}>
-      <label className="field check">
-        <input type="checkbox" checked={form.soundEnabled} disabled={!admin} onChange={(event) => setForm({ ...form, soundEnabled: event.target.checked })} />
-        Aktifkan suara alarm
-      </label>
-      <label className="field check">
-        <input type="checkbox" checked={muted} onChange={(event) => { setMuted(event.target.checked); saveMuted(event.target.checked); }} />
-        Bisukan di browser ini
-      </label>
-      <label className="field">
-        <span>Volume ({form.soundVolume}%)</span>
-        <input type="range" min={0} max={100} value={form.soundVolume} disabled={!admin} onChange={(event) => setForm({ ...form, soundVolume: Number(event.target.value) })} />
-      </label>
-      <label className="field">
-        <span>Ambang latency (ms)</span>
-        <input type="number" min={1} max={5000} value={form.latencyWarnMs} disabled={!admin} onChange={(event) => setForm({ ...form, latencyWarnMs: Number(event.target.value) })} />
-      </label>
-      <label className="field">
-        <span>Ambang packet loss (%)</span>
-        <input type="number" min={1} max={100} value={form.lossWarnPct} disabled={!admin} onChange={(event) => setForm({ ...form, lossWarnPct: Number(event.target.value) })} />
-      </label>
-      <div className="field full">
-        <span>Nada alarm (perangkat DOWN)</span>
-        <div className="sub">{form.soundName ? `Dipakai: ${form.soundName}` : 'Nada bawaan'}</div>
-        <div className="toolbar">
-          <input
-            type="file"
-            accept={audioAccept}
+    <form className="pref" onSubmit={(event) => void submit(event)}>
+      <PrefSection title="Suara alarm" description="Diputar di browser yang sedang membuka dashboard">
+        <div className="pref-list">
+          <PrefSwitch
+            title="Aktifkan suara alarm"
+            description="Berlaku untuk semua pengguna"
+            checked={form.soundEnabled}
             disabled={!admin}
-            onChange={(event) => {
-              const selected = event.target.files?.[0];
-              event.target.value = '';
-              if (selected) void uploadSound(selected, 'alarm-sound');
-            }}
+            onChange={(next) => setForm({ ...form, soundEnabled: next })}
           />
-          <button className="btn-ghost" type="button" onClick={() => void previewSound()}>Dengarkan</button>
-          {form.soundName ? <button className="btn-ghost" type="button" disabled={!admin} onClick={() => void resetSound('alarm-sound')}>Nada bawaan</button> : null}
-        </div>
-      </div>
-      <div className="field full">
-        <span>Nada perangkat UP</span>
-        <div className="sub">{form.recoverySoundName ? `Dipakai: ${form.recoverySoundName}` : 'Nada bawaan'}</div>
-        <div className="toolbar">
-          <input
-            type="file"
-            accept={audioAccept}
-            disabled={!admin}
-            onChange={(event) => {
-              const selected = event.target.files?.[0];
-              event.target.value = '';
-              if (selected) void uploadSound(selected, 'recovery-sound');
-            }}
+          <PrefSwitch
+            title="Bisukan di browser ini"
+            description="Hanya untuk browser ini selama sesi berjalan"
+            checked={muted}
+            onChange={(next) => { setMuted(next); saveMuted(next); }}
           />
-          <button className="btn-ghost" type="button" onClick={() => void previewRecovery()}>Dengarkan</button>
-          {form.recoverySoundName ? <button className="btn-ghost" type="button" disabled={!admin} onClick={() => void resetSound('recovery-sound')}>Nada bawaan</button> : null}
+          <PrefRow title="Volume" htmlFor="sound-volume">
+            <div className="pref-range">
+              <input id="sound-volume" type="range" min={0} max={100} value={form.soundVolume} disabled={!admin} onChange={(event) => setForm({ ...form, soundVolume: Number(event.target.value) })} />
+              <b>{form.soundVolume}%</b>
+            </div>
+          </PrefRow>
         </div>
-      </div>
-      <div className="full sub">
-        Nada berulang terus selama ada perangkat DOWN, sampai perangkat UP atau alarm di-acknowledge. Saat perangkat kembali UP, nada pendek diputar sekali. Ambang latency dan packet loss berlaku untuk semua perangkat.
-      </div>
-      {admin ? <button className="btn" type="submit">Simpan suara</button> : <div className="full sub">Hanya admin yang dapat mengubah suara dan ambang alarm. Bisukan tetap bisa dipakai di browser ini.</div>}
-      {error ? <div className="error full">{error}</div> : null}
-      {message ? <div className="full sub">{message}</div> : null}
+      </PrefSection>
+      <PrefSection title="Nada" description="MP3, WAV, OGG, atau M4A, maksimal 8 MB">
+        <div className="pref-list">
+          <SoundRow
+            title="Perangkat DOWN"
+            fileName={form.soundName}
+            admin={admin}
+            onPreview={() => void previewSound()}
+            onUpload={(file) => void uploadSound(file, 'alarm-sound')}
+            onReset={() => void resetSound('alarm-sound')}
+          />
+          <SoundRow
+            title="Perangkat UP"
+            fileName={form.recoverySoundName}
+            admin={admin}
+            onPreview={() => void previewRecovery()}
+            onUpload={(file) => void uploadSound(file, 'recovery-sound')}
+            onReset={() => void resetSound('recovery-sound')}
+          />
+        </div>
+        <p className="pref-hint">Nada DOWN berulang selama ada perangkat DOWN, sampai perangkat UP atau alarm di-acknowledge. Nada UP diputar sekali.</p>
+      </PrefSection>
+      <PrefSection title="Ambang peringatan" description="Berlaku untuk semua perangkat">
+        <div className="pref-list">
+          <PrefRow title="Latency" description="Peringatan jika latency melebihi nilai ini" htmlFor="warn-latency">
+            <div className="pref-number">
+              <input id="warn-latency" type="number" min={1} max={5000} value={form.latencyWarnMs} disabled={!admin} onChange={(event) => setForm({ ...form, latencyWarnMs: Number(event.target.value) })} />
+              <span>ms</span>
+            </div>
+          </PrefRow>
+          <PrefRow title="Packet loss" description="Peringatan jika packet loss melebihi nilai ini" htmlFor="warn-loss">
+            <div className="pref-number">
+              <input id="warn-loss" type="number" min={1} max={100} value={form.lossWarnPct} disabled={!admin} onChange={(event) => setForm({ ...form, lossWarnPct: Number(event.target.value) })} />
+              <span>%</span>
+            </div>
+          </PrefRow>
+        </div>
+      </PrefSection>
+      {admin ? (
+        <PrefActions><button className="btn" type="submit">Simpan suara</button></PrefActions>
+      ) : <p className="pref-note">Hanya admin yang dapat mengubah suara dan ambang alarm. Bisukan tetap bisa dipakai di browser ini.</p>}
+      <PrefFlash message={message} error={error} />
     </form>
   );
 }
 
+function SoundRow({
+  title,
+  fileName,
+  admin,
+  onPreview,
+  onUpload,
+  onReset,
+}: {
+  title: string;
+  fileName: string | null;
+  admin: boolean;
+  onPreview: () => void;
+  onUpload: (file: File) => void;
+  onReset: () => void;
+}) {
+  return (
+    <PrefRow title={title} description={fileName ?? 'Nada bawaan'}>
+      <button className="btn-ghost btn-sm" type="button" onClick={onPreview}>Dengarkan</button>
+      {admin ? (
+        <label className="btn-ghost btn-sm file-btn">
+          Ganti
+          <input
+            type="file"
+            accept={audioAccept}
+            hidden
+            onChange={(event) => {
+              const selected = event.target.files?.[0];
+              event.target.value = '';
+              if (selected) onUpload(selected);
+            }}
+          />
+        </label>
+      ) : null}
+      {admin && fileName ? <button className="btn-ghost btn-sm" type="button" onClick={onReset}>Bawaan</button> : null}
+    </PrefRow>
+  );
+}
+
 const mrtgColorFields = [
-  ['mrtgColorIn', 'Warna masuk'],
-  ['mrtgColorOut', 'Warna keluar'],
-  ['mrtgColorThreshold', 'Warna ambang'],
-  ['mrtgColorProbe', 'Warna probe'],
-  ['mrtgColorLoss', 'Warna packet loss'],
+  ['mrtgColorIn', 'Trafik masuk (RX)'],
+  ['mrtgColorOut', 'Trafik keluar (TX)'],
+  ['mrtgColorThreshold', 'Garis ambang'],
+  ['mrtgColorProbe', 'Probe'],
+  ['mrtgColorLoss', 'Packet loss'],
 ] as const;
 
 function MrtgTab() {
@@ -813,29 +917,34 @@ function MrtgTab() {
   }
 
   return (
-    <form className="form-grid" onSubmit={(event) => void submit(event)}>
-      <h3>Warna grafik</h3>
-      {mrtgColorFields.map(([key, label]) => (
-        <label className="field" key={key}>
-          <span>{label}</span>
-          <span className="color-field">
-            <input type="color" value={form[key]} disabled={!admin} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
-            <input value={form[key]} disabled={!admin} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
-          </span>
-        </label>
-      ))}
-      <h3>Persentase penagihan</h3>
-      <label className="field">
-        <span>Persen dari pemakaian maksimum (%)</span>
-        <input type="number" min={1} max={100} value={form.mrtgThresholdPct} disabled={!admin} onChange={(event) => setForm({ ...form, mrtgThresholdPct: Number(event.target.value) })} />
-      </label>
-      <div className="full sub">
-        100% adalah max masuk (RX) dan max keluar (TX) pada rentang grafik. {form.mrtgThresholdPct}% dihitung dari masing-masing max itu.
-        Nilai penagihan memakai arah yang lebih tinggi, misalnya max keluar 500 Mbps × {form.mrtgThresholdPct}% = {(500 * Number(form.mrtgThresholdPct)) / 100} Mbps.
-      </div>
-      {error ? <div className="error">{error}</div> : null}
-      {message ? <div className="sub">{message}</div> : null}
-      {admin ? <button className="btn" type="submit">Simpan MRTG</button> : null}
+    <form className="pref" onSubmit={(event) => void submit(event)}>
+      <PrefSection title="Warna grafik" description="Warna garis pada grafik trafik MRTG">
+        <div className="pref-list">
+          {mrtgColorFields.map(([key, label]) => (
+            <PrefRow key={key} title={label} htmlFor={`mrtg-${key}`}>
+              <span className="pref-color">
+                <input type="color" aria-label={label} value={form[key]} disabled={!admin} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
+                <input id={`mrtg-${key}`} value={form[key]} disabled={!admin} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
+              </span>
+            </PrefRow>
+          ))}
+        </div>
+      </PrefSection>
+      <PrefSection title="Penagihan" description="Batas pemakaian yang ditandai pada grafik">
+        <div className="pref-list">
+          <PrefRow title="Persentase dari pemakaian maksimum" description="Dihitung dari max masuk (RX) dan max keluar (TX) pada rentang grafik" htmlFor="mrtg-threshold">
+            <div className="pref-number">
+              <input id="mrtg-threshold" type="number" min={1} max={100} value={form.mrtgThresholdPct} disabled={!admin} onChange={(event) => setForm({ ...form, mrtgThresholdPct: Number(event.target.value) })} />
+              <span>%</span>
+            </div>
+          </PrefRow>
+        </div>
+        <p className="pref-hint">
+          Contoh: max keluar 500 Mbps × {form.mrtgThresholdPct}% = {(500 * Number(form.mrtgThresholdPct)) / 100} Mbps. Nilai penagihan memakai arah yang lebih tinggi antara masuk dan keluar.
+        </p>
+      </PrefSection>
+      {admin ? <PrefActions><button className="btn" type="submit">Simpan MRTG</button></PrefActions> : null}
+      <PrefFlash message={message} error={error} />
     </form>
   );
 }
@@ -847,7 +956,102 @@ function labelStatus(value?: string) {
   return '—';
 }
 
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
+}
+
 async function copyText(value: string, setMessage: (value: string) => void) {
   await navigator.clipboard.writeText(value);
   setMessage('Disalin');
+}
+
+function TabSvg({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+function DisplayIcon() {
+  return (
+    <TabSvg>
+      <rect x="2.5" y="3.5" width="19" height="13" rx="2.5" />
+      <path d="M8 20.5h8M12 16.5v4" />
+    </TabSvg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <TabSvg>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" />
+    </TabSvg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <TabSvg>
+      <path d="M20.5 14.1A8.5 8.5 0 1 1 9.9 3.5a6.6 6.6 0 0 0 10.6 10.6z" />
+    </TabSvg>
+  );
+}
+
+function GraphIcon() {
+  return (
+    <TabSvg>
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7" />
+    </TabSvg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <TabSvg>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" />
+    </TabSvg>
+  );
+}
+
+function KeyIcon() {
+  return (
+    <TabSvg>
+      <circle cx="7.5" cy="15.5" r="4.5" />
+      <path d="M10.7 12.3 20 3M16.5 6.5l3 3M14 9l2.5 2.5" />
+    </TabSvg>
+  );
+}
+
+function VolumeIcon() {
+  return (
+    <TabSvg>
+      <path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3.5a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.9a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18.7 5.8a8.5 8.5 0 0 1 0 12.4" />
+    </TabSvg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <TabSvg>
+      <path d="M21.5 2.5 11 13" />
+      <path d="m21.5 2.5-6.7 19-3.8-8.5-8.5-3.8z" />
+    </TabSvg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <TabSvg>
+      <circle cx="12" cy="12" r="9.5" />
+      <path d="M2.5 12h19M12 2.5a14.5 14.5 0 0 1 0 19 14.5 14.5 0 0 1 0-19" />
+    </TabSvg>
+  );
 }
