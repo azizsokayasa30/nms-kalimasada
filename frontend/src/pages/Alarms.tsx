@@ -64,20 +64,22 @@ export function AlarmsPage() {
         empty="Belum ada riwayat alarm."
         rows={history}
         now={now}
+        history
       />
     </>
   );
 }
 
-function AlarmTable({ title, empty, rows, now, onAcknowledge }: {
+function AlarmTable({ title, empty, rows, now, onAcknowledge, history }: {
   title: string;
   empty: string;
   rows: Alarm[];
   now: number;
   onAcknowledge?: (id: string) => Promise<void>;
+  history?: boolean;
 }) {
   return (
-    <section className="panel">
+    <section className={history ? 'panel alarm-history' : 'panel'}>
       <header>
         <h2>{title}</h2>
       </header>
@@ -103,7 +105,7 @@ function AlarmTable({ title, empty, rows, now, onAcknowledge }: {
                     <td>{formatClock(alarm.openedAt)}</td>
                     <td>{formatDuration(duration)}</td>
                     <td>{alarm.lastResponse ?? '—'}</td>
-                    <td>{alarm.downstreamCount ? `${alarm.downstreamCount} downstream` : formatLatency(alarm.latencyMs)}</td>
+                    <td className="alarm-impact">{alarm.downstreamCount ? `${alarm.downstreamCount} downstream` : formatLatency(alarm.latencyMs)}</td>
                     <td>
                       {onAcknowledge && !alarm.recoveredAt && !alarm.acknowledgedAt ? (
                         <button className="btn" type="button" onClick={() => void onAcknowledge(alarm.id)}>Disarm</button>

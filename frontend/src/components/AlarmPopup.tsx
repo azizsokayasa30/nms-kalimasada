@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatClock, formatDuration } from '../lib/format';
@@ -7,7 +7,7 @@ export type PopupConfig = {
   enabled: boolean;
   events: string[];
   durationSec: number;
-  position: 'top-right' | 'bottom-right';
+  position: 'center' | 'top-right' | 'bottom-right';
 };
 
 type Alarm = {
@@ -21,7 +21,7 @@ type Alarm = {
   downtimeSec: number | null;
 };
 
-type Toast = { key: string; event: 'down' | 'warning' | 'recovered'; title: string; detail: string };
+type Toast = { key: string; event: 'down' | 'warning' | 'recovered'; title: string; detail: string; time?: string; downtime?: string };
 
 export const POPUP_SETTINGS_EVENT = 'notification-settings-changed';
 const MAX_TOASTS = 5;
@@ -75,7 +75,8 @@ export function AlarmPopup() {
             key: `${alarm.id}:${event}`,
             event,
             title: alarm.title,
-            detail: `${alarm.ipAddress} · ${formatClock(alarm.openedAt)}`,
+            detail: alarm.ipAddress,
+            time: formatClock(alarm.openedAt),
           });
         }
         const gone = [...previous.values()].filter((alarm) => !known.current?.has(alarm.id));
@@ -89,7 +90,8 @@ export function AlarmPopup() {
               key: `${alarm.id}:recovered`,
               event: 'recovered',
               title: `${row.deviceName} pulih`,
-              detail: `${row.ipAddress} · downtime ${formatDuration(row.downtimeSec ?? 0)}`,
+              detail: row.ipAddress,
+              downtime: formatDuration(row.downtimeSec ?? 0),
             });
           }
         }
@@ -140,23 +142,51 @@ export function AlarmPopup() {
   );
 }
 
-const labels: Record<Toast['event'], string> = { down: 'DOWN', warning: 'WARNING', recovered: 'UP' };
+const labels: Record<Toast['event'], string> = { down: 'Perangkat DOWN', warning: 'Peringatan', recovered: 'Perangkat UP' };
+
+const icons: Record<Toast['event'], ReactNode> = {
+  down: <path d="M12 5v14M5 12l7 7 7-7" />,
+  warning: <><path d="M12 8v5" /><path d="M12 16.5v.01" /></>,
+  recovered: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+};
+
+const LEAVE_MS = 180;
 
 function PopupItem({ toast, durationSec, onClose, onOpen }: { toast: Toast; durationSec: number; onClose: () => void; onOpen: () => void }) {
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<number>();
+
+  const dismiss = () => {
+    if (leaveTimer.current) return;
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(onClose, LEAVE_MS);
+  };
+
+  useEffect(() => () => window.clearTimeout(leaveTimer.current), []);
+
   useEffect(() => {
     if (durationSec <= 0) return;
-    const timer = window.setTimeout(onClose, durationSec * 1000);
+    const timer = window.setTimeout(dismiss, durationSec * 1000);
     return () => window.clearTimeout(timer);
   }, [durationSec]);
 
   return (
-    <div className={`alarm-popup ${toast.event}`}>
+    <div className={`alarm-popup ${toast.event}${leaving ? ' leaving' : ''}`}>
+      <span className="alarm-popup-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+          {icons[toast.event]}
+        </svg>
+      </span>
       <button className="alarm-popup-body" type="button" onClick={onOpen}>
         <span className="alarm-popup-tag">{labels[toast.event]}</span>
         <strong>{toast.title}</strong>
-        <span className="alarm-popup-detail">{toast.detail}</span>
+        <span className="alarm-popup-detail">
+          {toast.detail}
+          {toast.time ? <> · <b className="alarm-popup-time">{toast.time}</b></> : null}
+          {toast.downtime ? <> · <b className="alarm-popup-downtime">Downtime {toast.downtime}</b></> : null}
+        </span>
       </button>
-      <button className="alarm-popup-close" type="button" aria-label="Tutup" onClick={onClose}>×</button>
+      <button className="alarm-popup-close" type="button" aria-label="Tutup" onClick={dismiss}>×</button>
     </div>
   );
 }

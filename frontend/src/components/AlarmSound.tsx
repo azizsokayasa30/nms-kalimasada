@@ -122,7 +122,7 @@ export function AlarmSound({ muted }: { muted: boolean }) {
 
   async function startFile(name: string) {
     stopTone();
-    const ready = await loadFile(name);
+    const ready = await loadFile(name).catch(() => false);
     if (!ready || !shouldRing.current || !file.current) {
       fileName.current = null;
       startTone();

@@ -52,7 +52,8 @@ type Link = {
 
 type PortSide = { id: string; name: string; snmp: 'off' | 'waiting' | 'ready'; interfaces: Array<{ key: string; name: string }> };
 
-type DeviceData = { name: string; ip: string; kind: string; status: string; latency: string };
+type LatencyLevel = 'good' | 'fair' | 'poor' | '';
+type DeviceData = { name: string; ip: string; kind: string; status: string; latency: string; latencyLevel: LatencyLevel };
 type FlowNode = Node<DeviceData, 'device'>;
 
 const GRID = 40;
@@ -67,7 +68,7 @@ const DeviceNode = memo(function DeviceNode({ data }: NodeProps<FlowNode>) {
       <Handle type="target" position={Position.Top} />
       <strong>{data.name}</strong>
       <small>{data.ip}</small>
-      <small>{data.kind} · {data.latency}</small>
+      <small>{data.kind} · <b className={`node-latency ${data.latencyLevel}`}>{data.latency}</b></small>
       {mark ? <span className={`node-state ${mark}`}>{mark === 'up' ? 'UP' : 'DOWN'}</span> : null}
       <Handle type="source" position={Position.Bottom} />
     </div>
@@ -604,11 +605,20 @@ function deviceNodeData(device: Device): DeviceData {
     kind: deviceTypeLabels[device.deviceType] ?? device.deviceType,
     status: device.status,
     latency: formatLatency(device.latencyMs),
+    latencyLevel: latencyLevel(device.latencyMs),
   };
 }
 
+function latencyLevel(ms: number | null): LatencyLevel {
+  if (ms == null || Number.isNaN(ms)) return '';
+  const value = Math.round(ms);
+  if (value <= 30) return 'good';
+  if (value <= 80) return 'fair';
+  return 'poor';
+}
+
 function sameData(a: DeviceData, b: DeviceData) {
-  return a.name === b.name && a.ip === b.ip && a.kind === b.kind && a.status === b.status && a.latency === b.latency;
+  return a.name === b.name && a.ip === b.ip && a.kind === b.kind && a.status === b.status && a.latency === b.latency && a.latencyLevel === b.latencyLevel;
 }
 
 function mergeNodes(current: FlowNode[], devices: Device[], keepPositions: boolean) {

@@ -9,7 +9,7 @@ export type NotifyEvent = (typeof notifyEvents)[number];
 export const whatsappProviders = ['fonnte', 'wablas', 'custom'] as const;
 export type WhatsappProvider = (typeof whatsappProviders)[number];
 
-export const popupPositions = ['top-right', 'bottom-right'] as const;
+export const popupPositions = ['center', 'top-right', 'bottom-right'] as const;
 export type PopupPosition = (typeof popupPositions)[number];
 
 export type PopupConfig = {
@@ -85,7 +85,7 @@ export class NotificationConfig {
         enabled: popup ? popup.enabled : true,
         events: asEvents(popup?.events, ['down', 'warning', 'recovered']),
         durationSec: clampInt(popupConfig.durationSec, 0, 600, 15),
-        position: pick(popupConfig.position, popupPositions, 'top-right'),
+        position: pick(popupConfig.position, popupPositions, 'center'),
       },
       telegram: {
         enabled: telegram?.enabled ?? false,

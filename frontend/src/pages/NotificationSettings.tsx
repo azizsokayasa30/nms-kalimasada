@@ -52,7 +52,7 @@ const emptyTemplates: Templates = { down: '', warning: '', recovered: '' };
 export function NotificationTab() {
   const { user } = useAuth();
   const admin = can(user?.role, 'admin');
-  const [popup, setPopup] = useState<PopupConfig>({ enabled: true, events: ['down', 'warning', 'recovered'], durationSec: 15, position: 'top-right' });
+  const [popup, setPopup] = useState<PopupConfig>({ enabled: true, events: ['down', 'warning', 'recovered'], durationSec: 15, position: 'center' });
   const [telegram, setTelegram] = useState({ enabled: false, events: ['down', 'recovered'] as EventId[], botToken: '', clearBotToken: false, chatIds: '', botTokenSet: false });
   const [whatsapp, setWhatsapp] = useState({ enabled: false, events: ['down', 'recovered'] as EventId[], provider: 'fonnte' as Provider, apiUrl: '', token: '', clearToken: false, targets: '', tokenSet: false });
   const [templates, setTemplates] = useState<Templates>(emptyTemplates);
@@ -241,6 +241,7 @@ export function NotificationTab() {
             </PrefRow>
             <PrefRow title="Posisi" htmlFor="popup-position">
               <select id="popup-position" value={popup.position} onChange={(event) => setPopup({ ...popup, position: event.target.value as PopupConfig['position'] })}>
+                <option value="center">Tengah layar</option>
                 <option value="top-right">Kanan atas</option>
                 <option value="bottom-right">Kanan bawah</option>
               </select>
