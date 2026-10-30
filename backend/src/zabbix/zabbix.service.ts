@@ -118,7 +118,7 @@ export class ZabbixService {
     if (token && method !== 'apiinfo.version') {
       headers.Authorization = `Bearer ${token}`;
     } else if (this.auth && method !== 'user.login' && method !== 'apiinfo.version') {
-      body.auth = this.auth;
+      headers.Authorization = `Bearer ${this.auth}`;
     }
 
     let response: Response;

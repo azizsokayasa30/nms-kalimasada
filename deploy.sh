@@ -601,7 +601,7 @@ nms_locations() {
   cat <<EOF
     root ${WEB_ROOT};
     index index.html;
-    client_max_body_size 20m;
+    client_max_body_size 256m;
 
     location /api/ {
         proxy_pass http://127.0.0.1:${APP_PORT};

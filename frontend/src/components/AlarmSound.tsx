@@ -175,9 +175,20 @@ export function AlarmSound({ muted }: { muted: boolean }) {
     const generation = pollGeneration.current + 1;
     pollGeneration.current = generation;
     let pollTimer: number | undefined;
+    let polling = false;
+    let queued = false;
 
     async function poll() {
       if (pollGeneration.current !== generation) return;
+      if (polling) {
+        queued = true;
+        return;
+      }
+      polling = true;
+      if (pollTimer) {
+        window.clearTimeout(pollTimer);
+        pollTimer = undefined;
+      }
       try {
         const [alarms, settings] = await Promise.all([
           api<Alarm[]>('/api/alarms'),
@@ -217,9 +228,14 @@ export function AlarmSound({ muted }: { muted: boolean }) {
       } catch {
         // Suara tidak boleh menjatuhkan dashboard.
       } finally {
-        if (pollGeneration.current === generation) {
-          pollTimer = window.setTimeout(() => void poll(), 5000);
+        polling = false;
+        if (pollGeneration.current !== generation) return;
+        if (queued) {
+          queued = false;
+          void poll();
+          return;
         }
+        pollTimer = window.setTimeout(() => void poll(), 5000);
       }
     }
 

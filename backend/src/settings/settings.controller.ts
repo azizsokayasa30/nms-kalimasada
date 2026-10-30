@@ -11,6 +11,7 @@ import { PrismaService } from '../infra/prisma.service';
 import { ProvisionService } from '../zabbix/zabbix.provision';
 import { ZabbixService } from '../zabbix/zabbix.service';
 import { SoundSlot, alarmExtension, cleanSoundName, hasAlarmSound, openAlarmSound, removeAlarmSound, saveAlarmSound } from './alarm-sound';
+import { BackupService } from './backup.service';
 import { IntegrationConfig } from './integration-config';
 import { mrtgSettingEntries, readMrtgStyle } from './mrtg-settings';
 
@@ -144,6 +145,15 @@ class ApiTokenBody {
 }
 
 @Catch(MulterError)
+class BackupUploadFilter implements ExceptionFilter {
+  catch(exception: MulterError, host: ArgumentsHost) {
+    const response = host.switchToHttp().getResponse<{ status: (code: number) => { json: (body: unknown) => void } }>();
+    const message = exception.code === 'LIMIT_FILE_SIZE' ? 'File cadangan lebih dari 256 MB' : 'File cadangan tidak bisa diterima';
+    response.status(400).json({ message });
+  }
+}
+
+@Catch(MulterError)
 class UploadErrorFilter implements ExceptionFilter {
   catch(exception: MulterError, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<{ status: (code: number) => { json: (body: unknown) => void } }>();
@@ -159,7 +169,47 @@ export class SettingsController {
     private readonly provision: ProvisionService,
     private readonly integration: IntegrationConfig,
     private readonly zabbix: ZabbixService,
+    private readonly backup: BackupService,
   ) {}
+
+  @Roles('admin')
+  @Get('backup/summary')
+  backupSummary() {
+    return this.backup.summary();
+  }
+
+  @Roles('admin')
+  @Get('backup')
+  async downloadBackup() {
+    const file = await this.backup.exportFile();
+    return new StreamableFile(file.body, {
+      type: 'application/gzip',
+      disposition: `attachment; filename="${file.name}"`,
+      length: file.body.length,
+    });
+  }
+
+  @Roles('admin')
+  @Post('backup/restore')
+  @UseFilters(BackupUploadFilter)
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } }))
+  async restoreBackup(
+    @Req() req: { user: AuthUser },
+    @UploadedFile() file?: UploadedAudio,
+    @Body('confirm') confirm?: string,
+  ) {
+    if (confirm !== 'PULIHKAN') throw new BadRequestException('Konfirmasi pemulihan diperlukan');
+    if (!file?.size) throw new BadRequestException('Pilih file cadangan');
+    const result = await this.backup.restore(file.buffer);
+    await this.prisma.event.create({
+      data: { type: 'backup', message: `Seluruh data dipulihkan dari cadangan oleh ${req.user.name}` },
+    }).catch(() => undefined);
+    this.integration.clearCache();
+    await this.zabbix.refreshConfig();
+    void this.zabbix.ensureConnection();
+    void this.zabbix.ensureWebhook();
+    return result;
+  }
 
   @Get()
   get() {

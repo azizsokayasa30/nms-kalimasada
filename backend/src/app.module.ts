@@ -18,6 +18,7 @@ import { NotificationService } from './notifications/notification.service';
 import { NotificationsController } from './notifications/notifications.controller';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { IntegrationConfig } from './settings/integration-config';
+import { BackupService } from './settings/backup.service';
 import { SettingsController } from './settings/settings.controller';
 import { TopologyController } from './topology/topology.controller';
 import { UsersController } from './users/users.controller';
@@ -47,6 +48,7 @@ import { ZabbixService } from './zabbix/zabbix.service';
     UplinkService,
     DevicesService,
     IntegrationConfig,
+    BackupService,
     NotificationConfig,
     NotificationService,
     InternetService,

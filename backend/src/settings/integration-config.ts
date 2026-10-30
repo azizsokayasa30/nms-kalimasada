@@ -26,6 +26,10 @@ export class IntegrationConfig {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  clearCache() {
+    this.cache = null;
+  }
+
   async read(): Promise<IntegrationSecrets> {
     if (this.cache && Date.now() - this.cache.at < 2000) return this.cache.value;
     const rows = await this.prisma.setting.findMany({ where: { key: { in: [...KEYS] } } });

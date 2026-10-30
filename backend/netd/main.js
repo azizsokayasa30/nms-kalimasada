@@ -58,6 +58,18 @@ async function reconcile(prev, next, options = {}) {
   return report;
 }
 
+function normalizeConfig(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new status.HttpError(400, 'Konfigurasi jaringan tidak valid');
+  }
+  const next = { ...store.empty(), ...body };
+  next.forwarding = Boolean(next.forwarding);
+  for (const key of ['vlans', 'addresses', 'routes', 'vpns']) {
+    if (!Array.isArray(next[key])) throw new status.HttpError(400, 'Konfigurasi jaringan tidak lengkap');
+  }
+  return next;
+}
+
 function clearPendingState() {
   if (pendingTimer) clearTimeout(pendingTimer);
   pendingTimer = null;
@@ -104,7 +116,7 @@ function readBody(req) {
     let size = 0;
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > 512 * 1024) {
+      if (size > 2 * 1024 * 1024) {
         reject(new status.HttpError(413, 'Data terlalu besar'));
         req.destroy();
         return;
@@ -131,6 +143,18 @@ async function route(req, body) {
   const clientIp = String(req.headers['x-client-ip'] ?? '');
 
   if (method === 'GET' && url.pathname === '/state') return status.buildState({ config, pending, clientIp });
+  if (method === 'GET' && url.pathname === '/config') return { config };
+  if (method === 'POST' && url.pathname === '/config') {
+    return enqueue(async () => {
+      const next = normalizeConfig(body);
+      const previous = config;
+      if (pending) clearPendingState();
+      store.save(next);
+      config = next;
+      const report = await reconcile(previous, next);
+      return { ok: true, warnings: report.warnings };
+    });
+  }
   if (method === 'POST' && url.pathname === '/test') return status.runTest(body);
   if (method === 'POST' && url.pathname === '/confirm') {
     if (pending && (!body.id || pending.id === body.id)) {

@@ -16,6 +16,7 @@ import {
 import { can, roleLabels } from '../lib/format';
 import { playRecovery } from '../components/AlarmSound';
 import { PrefActions, PrefFlash, PrefRow, PrefSection, PrefSwitch } from '../components/Pref';
+import { BackupTab } from './BackupSettings';
 import { NotificationTab } from './NotificationSettings';
 import { NetworkTab } from './network/NetworkTab';
 
@@ -52,6 +53,7 @@ const tabs = [
   { id: 'suara', label: 'Suara', icon: <VolumeIcon /> },
   { id: 'notifikasi', label: 'Notifikasi', icon: <SendIcon /> },
   { id: 'jaringan', label: 'Jaringan', icon: <GlobeIcon />, role: 'admin' },
+  { id: 'cadangan', label: 'Cadangan', icon: <ArchiveIcon />, role: 'admin' },
 ] as const;
 
 type TabId = (typeof tabs)[number]['id'];
@@ -86,6 +88,7 @@ export function SettingsPage() {
       {tab === 'suara' ? <SoundTab /> : null}
       {tab === 'notifikasi' ? <NotificationTab /> : null}
       {tab === 'jaringan' ? <NetworkTab /> : null}
+      {tab === 'cadangan' ? <BackupTab /> : null}
     </section>
   );
 }
@@ -1052,6 +1055,16 @@ function GlobeIcon() {
     <TabSvg>
       <circle cx="12" cy="12" r="9.5" />
       <path d="M2.5 12h19M12 2.5a14.5 14.5 0 0 1 0 19 14.5 14.5 0 0 1 0-19" />
+    </TabSvg>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <TabSvg>
+      <path d="M3.5 7.5h17v11a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+      <path d="M3 7.5 5.2 4.5h13.6L21 7.5" />
+      <path d="M9.5 12h5" />
     </TabSvg>
   );
 }
