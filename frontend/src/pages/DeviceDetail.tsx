@@ -74,7 +74,7 @@ export function DeviceDetailPage() {
         <div className="statrow">
           <div><span>Latency</span><strong>{formatLatency(device.latencyMs)}</strong></div>
           <div><span>Packet loss</span><strong>{formatPercent(device.packetLoss)}</strong></div>
-          <div><span>Last ping</span><strong>{device.lastResponse ?? '—'}</strong></div>
+          <div><span>Last ping</span><strong className={device.lastResponse === 'Timeout' ? 'status-bad' : undefined}>{device.lastResponse ?? '—'}</strong></div>
           <div><span>Last seen</span><strong>{formatClock(device.lastSeenAt)}</strong></div>
           <div><span>Down since</span><strong>{formatClock(device.downSince)}</strong></div>
           <div><span>Downtime</span><strong>{device.downSince || device.downtimeSec ? formatDuration(device.downtimeSec) : '—'}</strong></div>
